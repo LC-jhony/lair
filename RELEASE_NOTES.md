@@ -4,6 +4,75 @@ Primera versión etiquetada de **Lair**: entorno de desarrollo local para **PHP 
 
 ---
 
+## Artefactos de la release
+
+Los seis binarios se compilaron con `CGO_ENABLED=0`, `-trimpath` y `-ldflags "-s -w"` (estáticos, sin dependencias externas). Cada archivo contiene `lair` (o `lair.exe`), `README.md` y estas notas.
+
+| Sistema operativo | Arquitectura | Asset |
+| --- | --- | --- |
+| macOS | Apple Silicon (arm64) | `lair_1.0.0_darwin_arm64.tar.gz` |
+| macOS | Intel (x86_64) | `lair_1.0.0_darwin_amd64.tar.gz` |
+| Linux | x86_64 | `lair_1.0.0_linux_amd64.tar.gz` |
+| Linux | arm64 | `lair_1.0.0_linux_arm64.tar.gz` |
+| Windows | x86_64 | `lair_1.0.0_windows_amd64.zip` |
+| Windows | arm64 | `lair_1.0.0_windows_arm64.zip` |
+
+El archivo `SHA256SUMS` publicado junto a los assets permite verificar la descarga:
+
+```sh
+sha256sum -c SHA256SUMS     # Linux
+shasum -a 256 -c SHA256SUMS # macOS
+```
+
+### Instalación en macOS
+
+```sh
+curl -fLO https://github.com/LC-jhony/lair/releases/download/v1.0.0/lair_1.0.0_darwin_arm64.tar.gz
+tar -xzf lair_1.0.0_darwin_arm64.tar.gz
+mkdir -p "$HOME/.local/bin"
+install -m 0755 lair "$HOME/.local/bin/lair"
+export PATH="$HOME/.local/bin:$PATH"
+
+"$HOME/.local/bin/lair" install
+"$HOME/.local/bin/lair" doctor
+```
+
+Usa el asset `darwin_amd64` en Macs Intel. Si Gatekeeper bloquea el binario descargado: `xattr -d com.apple.quarantine "$HOME/.local/bin/lair"`.
+
+### Instalación en Linux
+
+```sh
+curl -fLO https://github.com/LC-jhony/lair/releases/download/v1.0.0/lair_1.0.0_linux_amd64.tar.gz
+tar -xzf lair_1.0.0_linux_amd64.tar.gz
+mkdir -p "$HOME/.local/bin"
+install -m 0755 lair "$HOME/.local/bin/lair"
+export PATH="$HOME/.local/bin:$PATH"
+
+"$HOME/.local/bin/lair" install
+sudo "$HOME/.local/share/lair/setup-privileged.sh"
+sudo "$HOME/.local/share/lair/trust-ca.sh" --add
+sudo systemctl enable --now "lair@$USER"
+```
+
+Tras abrir una terminal nueva: `lair php install 8.4 && lair php use 8.4`, `lair node install 22 && lair node default 22` y `lair doctor`.
+
+### Instalación en Windows (PowerShell)
+
+```powershell
+Invoke-WebRequest -Uri "https://github.com/LC-jhony/lair/releases/download/v1.0.0/lair_1.0.0_windows_amd64.zip" -OutFile lair.zip
+Expand-Archive lair.zip -DestinationPath "$env:LOCALAPPDATA\Lair" -Force
+$env:Path = "$env:LOCALAPPDATA\Lair;$env:Path"
+
+& "$env:LOCALAPPDATA\Lair\lair.exe" install
+& "$env:LOCALAPPDATA\Lair\lair.exe" doctor
+```
+
+Para hacer persistente el PATH: `[Environment]::SetEnvironmentVariable("Path", "$env:LOCALAPPDATA\Lair;$([Environment]::GetEnvironmentVariable('Path','User'))", "User")`.
+
+> El plan privilegiado (systemd, polkit, `systemd-resolved` e instalar la CA a nivel de sistema) está implementado solo en Linux. En macOS y Windows la CLI, el daemon, DNS en puertos altos, HTTPS con CA de usuario y los shims funcionan, pero no se genera ese plan privilegiado; la CA puede confiarse solo en el perfil de usuario.
+
+---
+
 ## Novedades por fases
 
 ### Fase 1 — Catálogo firmado e instalación atómica

@@ -250,7 +250,9 @@ sudo "$LAIR_HOME/trust-ca.sh" --add
 sudo systemctl enable --now lair@$USER
 ```
 
-`lair uninstall` genera `revert-privileged.sh` (y conserva los helpers con `--remove`) para deshacer todo. Con `--delete-data`, los scripts de reversión se guardan en `$HOME` para que no desaparezcan al borrar la raíz.
+`lair uninstall` **elimina todo lo que Lair instaló**: shims y entradas de PATH, PHP, `composer.phar`, Node, los binarios de **todos los servicios (incluido MariaDB)**, la CA local, certificados, logs, caché y `config.json`. Por defecto conserva las bases de datos en `services/<id>/data/`; `--delete-data` también las borra. Genera `revert-privileged.sh` (y conserva los helpers con `--remove`) para deshacer los cambios privilegiados; con `--delete-data`, esos scripts se guardan en `$HOME` para que no desaparezcan al borrar la raíz.
+
+> Lair **no instala** nginx, Laravel Valet ni Mailcatcher: pertenecen al antiguo Valet Deck o al sistema. El uninstall no toca paquetes del sistema; solo limpia cualquier directorio con esos nombres que exista dentro de `$LAIR_HOME` por versiones anteriores.
 
 ---
 
@@ -263,7 +265,7 @@ El binario es la **única** entrada: `lair <comando> [subcomando] [args] [flags]
 | Comando | Descripción |
 |---|---|
 | `lair install` | Bootstrap local (shims, PATH, CA, Composer verificado) y generación de los scripts privilegiados. |
-| `lair uninstall [--delete-data]` | Revierte perfiles/shims y genera la reversión. Los datos se conservan salvo `--delete-data`. |
+| `lair uninstall [--delete-data]` | Elimina PHP, Composer, Node, todos los servicios, shims, PATH y CA local; conserva las bases de datos salvo `--delete-data`. También genera la reversión privilegiada. |
 | `lair status [--json]` | Muestra home, estado del daemon, PHP, Node, servicios, puertos, sitios y jobs. `--json` para scripts. |
 | `lair doctor` | Comprueba PATH, shims y versiones; imprime cómo arreglarlo. **Primer comando si algo no responde.** |
 | `lair restart` | Reinicia todos los servicios supervisados activos. |

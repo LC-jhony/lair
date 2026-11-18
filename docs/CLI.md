@@ -5,7 +5,7 @@ La CLI detecta automáticamente el daemon: si `run/api.sock` responde y `run/api
 | Comando | Descripción |
 |---|---|
 | `lair install` | Bootstrap local (Composer verificado, shims, perfiles, CA) y generación de los scripts privilegiados. |
-| `lair uninstall [--delete-data]` | Revierte perfiles/shims y genera el script de reversión. Los datos se conservan salvo `--delete-data`. |
+| `lair uninstall [--delete-data]` | Elimina PHP, Composer, Node, todos los servicios (MariaDB incluido), shims, PATH y CA local; genera el script de reversión. Las bases de datos se conservan salvo `--delete-data`. No toca nginx, Laravel Valet ni Mailcatcher (no los instala Lair). |
 | `lair status [--json]` | Estado de PHP, Node, servicios, sitios, jobs y defaults. |
 | `lair doctor` | Comprueba si `<LAIR_HOME>/bin` está en PATH, qué shims faltan y qué versiones hay instaladas. Imprime el `export PATH=...` necesario. |
 | `lair restart` | Reinicia todos los servicios supervisados activos. |

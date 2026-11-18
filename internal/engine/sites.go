@@ -167,19 +167,57 @@ func (e *Engine) IsolatedVersion(tool, projectDir string) string {
 	return best
 }
 
-// Uninstall removes Lair's profile snippets, shims, DNS/CA (via the platform
-// plan) and optionally all data. By default databases are preserved.
+// Uninstall removes every component Lair installed: shims and PATH snippets,
+// PHP, Composer, Node, all service binaries, the local CA, daemon state and
+// generated cache/log files. Service databases are preserved unless deleteData
+// is set. The reversal scripts are deliberately kept by the CLI so the user can
+// still remove the privileged system changes (unit, polkit, resolved, CA trust).
 func (e *Engine) Uninstall(home, dataDir string, deleteData bool) error {
 	e.Supervisors.StopAll()
 	_ = shims.RemoveProfiles(home)
-	// The daemon's own files (unit, DNS, trust store) are reverted by the
-	// privileged plan produced in the CLI; here we remove user-owned state.
+
 	if deleteData {
 		return os.RemoveAll(dataDir)
 	}
-	// Remove shims and tools but keep services/<id>/data and php.ini files.
-	_ = os.RemoveAll(filepath.Join(dataDir, "bin"))
-	_ = os.RemoveAll(filepath.Join(dataDir, "tools"))
-	_ = os.RemoveAll(filepath.Join(dataDir, "cache"))
+
+	// All runtimes and tools managed by Lair.
+	for _, dir := range []string{
+		e.Paths.Bin,
+		e.Paths.Tools,
+		e.Paths.PHP,
+		e.Paths.Node,
+		e.Paths.Cache,
+		e.Paths.Certs,
+		e.Paths.Run,
+		e.Paths.Log,
+	} {
+		_ = os.RemoveAll(dir)
+	}
+	_ = os.RemoveAll(e.Paths.ConfigFile)
+
+	// Remove every installed service version (MariaDB, PostgreSQL, Redis, ...)
+	// but keep services/<id>/data so a later install can reuse the databases.
+	serviceRoot := e.Paths.Services
+	entries, _ := os.ReadDir(serviceRoot)
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		idDir := filepath.Join(serviceRoot, entry.Name())
+		sub, _ := os.ReadDir(idDir)
+		for _, s := range sub {
+			if s.IsDir() && s.Name() == "data" {
+				continue
+			}
+			_ = os.RemoveAll(filepath.Join(idDir, s.Name()))
+		}
+	}
+
+	// Older stacks could leave these under the data root. Lair itself never
+	// installs system nginx/Laravel Valet/Mailcatcher, but clean up any legacy
+	// directory found inside its own root.
+	for _, name := range []string{"nginx", "valet", "laravel-valet", "mailcatcher", "mailpit"} {
+		_ = os.RemoveAll(filepath.Join(dataDir, name))
+	}
 	return nil
 }

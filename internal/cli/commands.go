@@ -171,10 +171,12 @@ func (c *ctx) uninstall(args []string) error {
 		return err
 	}
 	if deleteData {
-		c.printf("Local state and all data under %s were removed.\n", c.paths.Root)
+		c.printf("Lair and all its data under %s were removed.\n", c.paths.Root)
 	} else {
-		c.printf("Local state removed (databases preserved).\n")
+		c.printf("Removed PHP, Composer, Node, all service binaries (MariaDB included), shims, PATH entries and local CA.\n")
+		c.printf("Service databases were preserved; use --delete-data to remove them too.\n")
 	}
+	c.printf("nginx, Laravel Valet and Mailcatcher are not installed by Lair; system packages are left untouched.\n")
 	c.printf("To finish, review and run (elevation only for the first script):\n")
 	c.printf("  1. sudo %s\n", revert)
 	c.printf("  2. %s --remove\n", trustUser)

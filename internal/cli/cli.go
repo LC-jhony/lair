@@ -144,7 +144,7 @@ func usage(w io.Writer) {
 
 Usage:
   lair install                       Install shims, Composer, CA and show the privileged setup plan
-  lair uninstall [--delete-data]     Remove Lair (databases are preserved by default)
+  lair uninstall [--delete-data]     Remove all Lair-installed runtimes, services and shims (databases kept unless --delete-data)
   lair status [--json]               Show PHP, Node, services, sites and jobs
   lair doctor                        Diagnose PATH, shims and installed tools
   lair restart                       Restart all supervised services

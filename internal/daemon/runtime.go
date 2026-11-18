@@ -19,6 +19,7 @@ import (
 	"github.com/lair-sh/lair/internal/engine"
 	"github.com/lair-sh/lair/internal/manifest"
 	"github.com/lair-sh/lair/internal/services"
+	"github.com/lair-sh/lair/internal/ui"
 	"github.com/lair-sh/lair/internal/web"
 )
 
@@ -30,20 +31,25 @@ type RuntimeConfig struct {
 	DNSPort   int
 	HTTPPort  int
 	HTTPSPort int
+	UIPort    int
 	EnableDNS bool
 	EnableWeb bool
 	EnableAPI bool
+	EnableUI  bool
 }
 
 // Runtime owns all long-lived daemon components.
 type Runtime struct {
-	cfg    RuntimeConfig
-	Engine *engine.Engine
-	api    *Server
-	dns    *dns.Server
-	web    *web.Server
-	token  string
-	sock   string
+	cfg     RuntimeConfig
+	Engine  *engine.Engine
+	api     *Server
+	dns     *dns.Server
+	web     *web.Server
+	ui      *ui.Server
+	token   string
+	uiToken string
+	uiURL   string
+	sock    string
 
 	stopOnce sync.Once
 	stop     context.CancelFunc
@@ -54,7 +60,8 @@ func Defaults(paths app.Paths, catalog *manifest.Catalog) RuntimeConfig {
 	return RuntimeConfig{
 		Paths: paths, Catalog: catalog, Domain: "test",
 		DNSPort: dns.DefaultPort, HTTPPort: 80, HTTPSPort: 443,
-		EnableDNS: true, EnableWeb: true, EnableAPI: true,
+		UIPort:    9797,
+		EnableDNS: true, EnableWeb: true, EnableAPI: true, EnableUI: true,
 	}
 }
 
@@ -72,6 +79,9 @@ func New(cfg RuntimeConfig) (*Runtime, error) {
 	if cfg.HTTPSPort == 0 {
 		cfg.HTTPSPort = 443
 	}
+	if cfg.UIPort == 0 {
+		cfg.UIPort = 9797
+	}
 	if err := cfg.Paths.Ensure(); err != nil {
 		return nil, err
 	}
@@ -83,6 +93,9 @@ func New(cfg RuntimeConfig) (*Runtime, error) {
 	r.web = web.NewServer(cfg.Paths.Certs, cfg.Domain)
 	r.web.HTTPPort = cfg.HTTPPort
 	r.web.HTTPSPort = cfg.HTTPSPort
+	// The engine registers sites on its own router; the listener must use the
+	// very same router, otherwise parked sites would return 404 forever.
+	r.web.Router = eng.Web.Router
 	r.dns = dns.NewServer(cfg.Domain, cfg.DNSPort)
 	r.sock, err = cfg.Paths.SocketPath("api")
 	if err != nil {
@@ -94,6 +107,13 @@ func New(cfg RuntimeConfig) (*Runtime, error) {
 // Socket and Token return the API connection details for the CLI.
 func (r *Runtime) Socket() string { return r.sock }
 func (r *Runtime) Token() string  { return r.token }
+
+// UIURL returns the loopback URL (including the token) that opens the admin
+// interface. It is available once Run has started the UI server.
+func (r *Runtime) UIURL() string { return r.uiURL }
+
+// UIToken returns the token used by the UI bridge.
+func (r *Runtime) UIToken() string { return r.uiToken }
 
 // Run starts every enabled component and blocks until ctx is cancelled, a
 // shutdown signal arrives, or a fatal component error occurs.
@@ -117,7 +137,15 @@ func (r *Runtime) Run(ctx context.Context) error {
 	}
 
 	var wg sync.WaitGroup
-	errCh := make(chan error, 3)
+	errCh := make(chan error, 4)
+
+	// All local front-ends (unix API and embedded UI) share one dispatcher so
+	// the browser and the CLI execute exactly the same set of actions.
+	dispatcher := NewDispatcher(r.Engine, r.stop)
+	dispatcher.Set(ActionRestart, func(context.Context, json.RawMessage) (any, error) {
+		r.restartServices()
+		return map[string]bool{"restarted": true}, nil
+	})
 
 	// DNS (unprivileged UDP on loopback).
 	if r.cfg.EnableDNS {
@@ -130,21 +158,23 @@ func (r *Runtime) Run(ctx context.Context) error {
 		}()
 	}
 
-	// Web (80/443 on loopback), with conflict detection before binding.
+	// Web (80/443 on loopback), with conflict detection before binding. A
+	// binding failure is non-fatal: DNS, the API and the UI stay up.
 	if r.cfg.EnableWeb {
 		if conflicts, _ := web.PortsInUse(); len(conflicts) > 0 {
 			for _, c := range conflicts {
 				fmt.Fprintf(os.Stderr, "lair: warning: %s\n", c.String())
 			}
 		} else if err := r.web.Start(); err != nil {
-			return fmt.Errorf("web: %w", err)
+			fmt.Fprintf(os.Stderr, "lair: warning: web server: %v\n", err)
+		} else {
+			go func() {
+				<-runCtx.Done()
+				shutdownCtx, sCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer sCancel()
+				_ = r.web.Shutdown(shutdownCtx)
+			}()
 		}
-		go func() {
-			<-runCtx.Done()
-			shutdownCtx, sCancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer sCancel()
-			_ = r.web.Shutdown(shutdownCtx)
-		}()
 	}
 
 	// Local API over a token-protected unix socket.
@@ -158,17 +188,45 @@ func (r *Runtime) Run(ctx context.Context) error {
 			return fmt.Errorf("write api token: %w", err)
 		}
 		r.api = NewServer(r.sock, tok)
-		dispatcher := NewDispatcher(r.Engine, r.stop)
-		dispatcher.Set(ActionRestart, func(context.Context, json.RawMessage) (any, error) {
-			r.restartServices()
-			return map[string]bool{"restarted": true}, nil
-		})
 		Register(r.api, dispatcher)
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			if err := r.api.Serve(runCtx); err != nil {
 				errCh <- fmt.Errorf("api: %w", err)
+			}
+		}()
+	}
+
+	// Embedded administration UI on loopback. A dedicated token is written to
+	// run/ui.token (0600) and the ready-to-open URL to run/ui.url (0600).
+	if r.cfg.EnableUI {
+		tok, err := NewToken()
+		if err != nil {
+			return err
+		}
+		r.uiToken = tok
+		srv, err := ui.New(dispatcher, tok)
+		if err != nil {
+			return fmt.Errorf("ui: %w", err)
+		}
+		r.ui = srv
+		tokenPath := filepath.Join(r.cfg.Paths.Run, "ui.token")
+		urlPath := filepath.Join(r.cfg.Paths.Run, "ui.url")
+		if err := WriteToken(tokenPath, tok); err != nil {
+			return fmt.Errorf("write ui token: %w", err)
+		}
+		r.uiURL = fmt.Sprintf("http://127.0.0.1:%d/#token=%s", r.cfg.UIPort, tok)
+		if err := os.WriteFile(urlPath, []byte(r.uiURL+"\n"), 0o600); err != nil {
+			return fmt.Errorf("write ui url: %w", err)
+		}
+		_ = os.Chmod(urlPath, 0o600)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			addr := fmt.Sprintf("127.0.0.1:%d", r.cfg.UIPort)
+			if err := r.ui.ListenAndServe(runCtx, addr); err != nil {
+				fmt.Fprintf(os.Stderr, "lair: warning: ui server: %v\n", err)
 			}
 		}()
 	}
@@ -196,6 +254,8 @@ func (r *Runtime) Run(ctx context.Context) error {
 	cancel()
 	wg.Wait()
 	_ = os.Remove(filepath.Join(r.cfg.Paths.Run, "api.token"))
+	_ = os.Remove(filepath.Join(r.cfg.Paths.Run, "ui.token"))
+	_ = os.Remove(filepath.Join(r.cfg.Paths.Run, "ui.url"))
 	return runErr
 }
 

@@ -357,13 +357,28 @@ lair pin node 22           # añade node=22
 lair daemon --foreground   # primer plano, para desarrollo
 ```
 
-Flags: `--no-web`, `--no-dns`, `--no-api`, `--dns-port`, `--http-port`, `--https-port`, `--domain`. Sin `--foreground`, implica que el daemon lo gestiona systemd (`lair@<usuario>.service`).
+Flags: `--no-web`, `--no-dns`, `--no-api`, `--no-ui`, `--ui-port N`, `--dns-port`, `--http-port`, `--https-port`, `--domain`. Sin `--foreground`, implica que el daemon lo gestiona systemd (`lair@<usuario>.service`).
 
 ```sh
 lair daemon --foreground --no-web --no-dns
+lair daemon --foreground --ui-port 9800
 ```
 
-### 3.8 `exec` (interno, no lo llames a mano)
+### 3.8 Interfaz web y lanzador (`lair ui`)
+
+`lair ui` abre el **panel de administración** en el navegador. Es una SPA embebida en el propio binario (HTML/CSS/JS servidos por el daemon en `127.0.0.1`), sin Electron ni dependencias gráficas. El lanzador `Lair` del menú de aplicaciones ejecuta exactamente este comando.
+
+```sh
+lair ui
+```
+
+- Si el daemon no está activo, `lair ui` lo arranca en segundo plano y espera a que la interfaz responda (máx. 10 s). El registro queda en `$LAIR_HOME/log/daemon-ui.log`.
+- La URL se escribe en `$LAIR_HOME/run/ui.url` (`0600`) e incluye un token de un solo uso en el fragmento (`#token=…`). Ese token nunca viaja en la query ni se envía al servidor: la SPA lo lee de `location.hash`, lo guarda en `sessionStorage` y lo envía como cabecera `X-Lair-Token` a `/api`.
+- El panel gestiona PHP, Node, servicios, sitios (`.test`), logs, certificados HTTPS, pin/isolate, actualización del catálogo, reinicio, `doctor` y desinstalación. Todo pasa por el mismo `Dispatcher` que usa la CLI, sobre un listener solo de loopback.
+- El servidor UI se desactiva con `lair daemon --foreground --no-ui` y su puerto se cambia con `--ui-port N` (por defecto `9797`).
+- El paquete `.deb` instala `/usr/share/applications/lair.desktop` e `/usr/share/icons/hicolor/scalable/apps/lair.svg`. Tras instalar, cierra sesión y vuelve a entrar (o ejecuta `update-desktop-database`) para que el icono aparezca en el menú.
+
+### 3.9 `exec` (interno, no lo llames a mano)
 
 Cada shim contiene `exec "<lair>" exec <tool> "$@"`. El subcomando oculto `exec` resuelve la versión para el directorio actual y usa `execve`, sin proceso intermediario. Si falta la versión y hay TTY, ofrece instalarla; desde un script, falla con un mensaje claro. Es la pieza que hace que `node`, `php` y `psql` "simplemente funcionen".
 
@@ -494,6 +509,7 @@ mi-app.test
 | Componente | Dirección |
 |---|---|
 | API local | `run/api.sock` + `run/api.token` (`0600`) |
+| Panel de administración | `127.0.0.1:9797` + `run/ui.url` / `run/ui.token` (`0600`) |
 | DNS `*.test` | `127.0.0.1:53535` |
 | HTTP / HTTPS | `127.0.0.1:80` / `127.0.0.1:443` |
 
@@ -505,7 +521,7 @@ El daemon no corre como root: usa `CAP_NET_BIND_SERVICE` y `NoNewPrivileges=yes`
 
 - La confianza de los binarios depende **solo de la firma Ed25519** embebida, nunca del mirror.
 - Descarga a `.part` + SHA-256 en streaming + `safeJoin`; builds *yanked* rechazados y reemplazados automáticamente.
-- `run/` es `0700`, el token de la API `0600` y se compara en tiempo constante.
+- `run/` es `0700`, los tokens de la API y del panel son `0600` y se comparan en tiempo constante. El token del panel viaja en el fragmento de la URL, no en la query.
 - `certs/ca-key.pem` permite emitir certificados válidos en **todo el sistema** si la CA está instalada: trátalo como secreto.
 - Los scripts privilegiados no se ejecutan automáticamente; el usuario los revisa y los lanza con `sudo`.
 - No hay sandbox: los servicios son procesos normales del usuario. Detalle en [`docs/SECURITY.md`](docs/SECURITY.md).

@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Lair
+GenericName=Development Environment Manager
+Comment=Administra PHP, Node, servicios y sitios de desarrollo
+Exec=lair ui
+Icon=lair
+Terminal=false
+Categories=Development;IDE;
+Keywords=php;laravel;node;desarrollo;
+StartupNotify=true
+StartupWMClass=lair

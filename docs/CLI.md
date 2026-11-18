@@ -28,7 +28,19 @@ La CLI detecta automáticamente el daemon: si `run/api.sock` responde y `run/api
 | `lair pin php\|node <version>` | Escribe `.lairrc` en el proyecto (versionable). Los proyectos con `.flockrc` siguen funcionando y se migran al pinar. |
 | `lair isolate php\|node <version\|--off>` | Fija una versión para un sitio aparcado (config.json, prioridad máxima). |
 | `lair logs [name]` | Muestra un log o lista los disponibles. |
-| `lair daemon --foreground` | Ejecuta el daemon en primer plano. Flags: `--no-web`, `--no-dns`, `--no-api`, `--dns-port`, `--http-port`, `--https-port`, `--domain`. |
+| `lair ui` | Abre el panel web embebido en el navegador. Arranca el daemon si hace falta y lee la URL tokenizada de `run/ui.url`. |
+| `lair daemon --foreground` | Ejecuta el daemon en primer plano. Flags: `--no-web`, `--no-dns`, `--no-api`, `--no-ui`, `--ui-port N`, `--dns-port`, `--http-port`, `--https-port`, `--domain`. |
+
+## Panel web embebido
+
+El daemon sirve una SPA en `127.0.0.1:9797` (configurable con `--ui-port N`). No es una aplicación Electron: el HTML, el CSS y el JS viajan dentro del binario y el lanzador `.desktop` solo ejecuta `lair ui`.
+
+- Autenticación: la URL contiene `#token=<hex>`. La SPA mueve el token a `sessionStorage` y lo envía como `X-Lair-Token` en cada `POST /api`. El bridge rechaza peticiones sin token con `401` y usa comparación en tiempo constante.
+- Superficie: panel de estado, instalación/activación de PHP y Node, sitios (`park`, `link`, `unlink`, `secure`, `pin`, `isolate`), servicios (instalar, usar, reiniciar, parar, crear BD, desinstalar), logs, actualización del catálogo, `doctor`, reinicio, apagado y desinstalación.
+- Archivos: `run/ui.token` y `run/ui.url`, ambos `0600` dentro de `run/` (`0700`). Se eliminan al apagar el daemon.
+- El panel y la CLI comparten el mismo `Dispatcher`, por lo que no hay acciones "de UI" distintas: cualquier cambio se refleja en `lair status`.
+
+Si el daemon está activo pero se inició con `--no-ui`, `lair ui` avisa en lugar de abrir una URL obsoleta. Para cambiar el puerto: reinicia el daemon con `--ui-port N`; el lanzador lee siempre `run/ui.url`, así que no necesita configuración adicional.
 
 ## Comando oculto `exec`
 

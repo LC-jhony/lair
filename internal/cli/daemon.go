@@ -29,6 +29,13 @@ func runDaemon(args []string, out, errOut io.Writer) error {
 			cfg.EnableDNS = false
 		case "--no-api":
 			cfg.EnableAPI = false
+		case "--no-ui":
+			cfg.EnableUI = false
+		case "--ui-port":
+			if i+1 < len(args) {
+				fmt.Sscanf(args[i+1], "%d", &cfg.UIPort)
+				i++
+			}
 		case "--dns-port":
 			if i+1 < len(args) {
 				fmt.Sscanf(args[i+1], "%d", &cfg.DNSPort)
@@ -73,8 +80,12 @@ func runDaemon(args []string, out, errOut io.Writer) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "lair daemon: api=%s dns=127.0.0.1:%d web=127.0.0.1:%d/443\n",
-		rt.Socket(), cfg.DNSPort, cfg.HTTPPort)
+	uiText := "desactivada"
+	if cfg.EnableUI {
+		uiText = fmt.Sprintf("127.0.0.1:%d", cfg.UIPort)
+	}
+	fmt.Fprintf(out, "lair daemon: api=%s dns=127.0.0.1:%d web=127.0.0.1:%d/%d ui=%s\n",
+		rt.Socket(), cfg.DNSPort, cfg.HTTPPort, cfg.HTTPSPort, uiText)
 	return rt.Run(context.Background())
 }
 

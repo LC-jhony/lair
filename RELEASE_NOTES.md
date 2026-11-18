@@ -4,6 +4,16 @@ Primera versión etiquetada de **Lair**: entorno de desarrollo local para **PHP 
 
 ---
 
+## Novedades
+
+- **`lair ui`**: panel de administración web embebido (SPA en `127.0.0.1:9797`) que gestiona PHP, Node, servicios, sitios, logs, HTTPS y mantenimiento desde el navegador.
+- **Lanzador de escritorio**: el `.deb` instala `lair.desktop` e `lair.svg`; el menú de aplicaciones muestra **Lair** y ejecuta `lair ui`.
+- **Paquetes `.deb`** para Linux `amd64` y `arm64`, con binario, docs, lanzador e icono.
+
+Detalles en `README.md` y `docs/CLI.md`.
+
+---
+
 ## Campos del release
 
 Esta versión publica **un asset por plataforma y arquitectura**: Linux, macOS y Windows, cada uno en `amd64` y `arm64`. Los seis comprimidos contienen `lair` (o `lair.exe`), `README.md` y `RELEASE_NOTES.md`; además, Linux incluye **dos paquetes `.deb`** (`amd64` y `arm64`) para instalar con `dpkg`/`apt`. Los binarios se compilaron con `CGO_ENABLED=0`, `-trimpath` y `-ldflags "-s -w"` (estáticos, sin dependencias externas).
@@ -47,14 +57,14 @@ Esta versión publica **un asset por plataforma y arquitectura**: Linux, macOS y
 | `Arquitectura` | `amd64` | `arm64` | x86_64 (Intel/AMD) frente a AArch64 (ARM de 64 bits). |
 | `Formato` | `.tar.gz` | `.tar.gz` | Se extrae con `tar -xzf`. |
 | `Binario` | `lair` | `lair` | Ejecutable instalado en `$HOME/.local/bin/lair`. |
-| `Tamaño` | 3 717 359 bytes (3.54 MiB) | 3 338 438 bytes (3.18 MiB) | Tamaño del comprimido publicado. |
-| `SHA-256` | `83a01faa19f121d19701c6a73ef0f12c8ac1ff37bcf4c58368428bc0ea4551c8` | `ed97236d32fb491381185dbe009659460d94b8d89ed6e8e1c1473b87a70b4bd0` | Hash oficial; comparar con `dist/SHA256SUMS`. |
+| `Tamaño` | 3 779 782 bytes (3.60 MiB) | 3 395 825 bytes (3.24 MiB) | Tamaño del comprimido publicado. |
+| `SHA-256` | `2452676b3f160e59b1b2fb929c1d79d88ef3c6fffb37fd8096508ea79d5a7afa` | `2d398d9d3561c21de56d7a585da07bf2c7ba2ddbbd9e3ad85acd9de006a0c27e` | Hash oficial; comparar con `dist/SHA256SUMS`. |
 | `Asset (.deb)` | `lair_1.0.0_amd64.deb` | `lair_1.0.0_arm64.deb` | Paquete Debian para instalar con `sudo dpkg -i`. |
 | `Sistema operativo (.deb)` | Debian/Ubuntu y derivados | Debian/Ubuntu y derivados en ARM | El binario es estático; el paquete solo instala archivos. |
 | `Arquitectura (.deb)` | `amd64` | `arm64` | Debe coincidir con `dpkg --print-architecture`. |
-| `Formato (.deb)` | `.deb` | `.deb` | Paquete Debian 2.0 con `root:root` y `usr/bin/lair`. |
-| `Tamaño (.deb)` | 3 151 864 bytes (3.01 MiB) | 2 803 526 bytes (2.67 MiB) | Tamaño del paquete publicado. |
-| `SHA-256 (.deb)` | `d8b46432f01126e199aa618000e7056e5a3bbd93430b76091362671a6bc87e44` | `599720fa7b2cf830012c78ecd1b672d0d16afe4aa8de57a5ef3224f39695611b` | Hash oficial del `.deb`; comparar con `SHA256SUMS`. |
+| `Formato (.deb)` | `.deb` | `.deb` | Paquete Debian 2.0 con `root:root`, `usr/bin/lair`, lanzador `.desktop` e icono SVG. |
+| `Tamaño (.deb)` | 3 203 298 bytes (3.06 MiB) | 2 848 438 bytes (2.72 MiB) | Tamaño del paquete publicado. |
+| `SHA-256 (.deb)` | `f03d0bd3eec78e23cf0f509305e7812eeb8d78da45c0c5a2643e4c194b9197ec` | `c0722b5917934cec02ca373efd1c5b24fa455c5cd36919d4f1a0f0d85d148ad8` | Hash oficial del `.deb`; comparar con `SHA256SUMS`. |
 | `Verificación` | `sha256sum -c SHA256SUMS` | `sha256sum -c SHA256SUMS` | Valida los ocho assets de una sola vez. |
 | `Instalación` | Ver bloques **Instalación en Linux** e **Instalación con .deb**. | Igual que amd64, cambiando el nombre del asset. | Comprimido en `$HOME/.local/bin` o paquete en `/usr/bin/lair`. |
 | `Notas` | Plan privilegiado disponible: systemd, polkit, `systemd-resolved` y CA del sistema. | Igual que amd64; usar este asset en equipos ARM (Raspberry Pi, servidores ARM). | Linux es la única plataforma con `setup-privileged.sh`. |
@@ -94,7 +104,7 @@ curl -fLO https://github.com/LC-jhony/lair/releases/download/v1.0.0/SHA256SUMS
 # 2. Verificar antes de instalar
 sha256sum -c SHA256SUMS
 
-# 3. Instalar el paquete (instala /usr/bin/lair, docs y copyright)
+# 3. Instalar el paquete (instala /usr/bin/lair, docs, lanzador e icono)
 sudo dpkg -i lair_1.0.0_amd64.deb
 
 # 4. Arrancar Lair y aplicar el plan privilegiado (revisarlo antes)
@@ -102,9 +112,12 @@ lair install
 sudo "$HOME/.local/share/lair/setup-privileged.sh"
 sudo "$HOME/.local/share/lair/trust-ca.sh" --add
 sudo systemctl enable --now "lair@$USER"
+
+# 5. Abre el panel de administración (también disponible desde el menú de aplicaciones)
+lair ui
 ```
 
-En ARM cambia `amd64` por `arm64`. Comprueba tu arquitectura con `dpkg --print-architecture`. El `.deb` instala el binario en `/usr/bin/lair` (disponible para todos los usuarios); Lair guarda sus datos igualmente bajo `$LAIR_HOME` del usuario que lo ejecuta. Para desinstalar el paquete: `sudo dpkg -r lair`; recuerda ejecutar antes `lair uninstall` para limpiar el estado del usuario.
+El icono aparece en el menú tras cerrar sesión y volver a entrar (o con `update-desktop-database`). En ARM cambia `amd64` por `arm64`. Comprueba tu arquitectura con `dpkg --print-architecture`. El `.deb` instala el binario en `/usr/bin/lair` (disponible para todos los usuarios); Lair guarda sus datos igualmente bajo `$LAIR_HOME` del usuario que lo ejecuta. Para desinstalar el paquete: `sudo dpkg -r lair`; recuerda ejecutar antes `lair uninstall` para limpiar el estado del usuario.
 
 ---
 
@@ -117,9 +130,9 @@ En ARM cambia `amd64` por `arm64`. Comprueba tu arquitectura con `dpkg --print-a
 | `Arquitectura` | `arm64` (Apple Silicon) | `amd64` (x86_64, Intel) | Elegir según el chip: M1/M2/M3/M4 → arm64; Intel → amd64. |
 | `Formato` | `.tar.gz` | `.tar.gz` | Se extrae con `tar -xzf`. |
 | `Binario` | `lair` | `lair` | Ejecutable instalado en `$HOME/.local/bin/lair`. |
-| `Tamaño` | 3 452 974 bytes (3.29 MiB) | 3 765 857 bytes (3.59 MiB) | Tamaño del comprimido publicado. |
-| `SHA-256` | `e7a7cbd1420ab5dfcfcef10925e15efa639701b1f02d364454d145e086a1595e` | `90f22927f29bcbce186735729327f8586303daf6fbd6c1ee9b6da728b711895f` | Hash oficial; comparar con `dist/SHA256SUMS`. |
-| `Verificación` | `shasum -a 256 -c SHA256SUMS` | `shasum -a 256 -c SHA256SUMS` | Valida los seis assets de una sola vez. |
+| `Tamaño` | 3 512 828 bytes (3.35 MiB) | 3 830 452 bytes (3.65 MiB) | Tamaño del comprimido publicado. |
+| `SHA-256` | `c35d21d1d17835abe7e636a517d5632bf1d9c3309386e7decc25bfa58adc994a` | `118828386b47568ffe5e024862666f50b46c25496628cba23add9b794aac0b15` | Hash oficial; comparar con `dist/SHA256SUMS`. |
+| `Verificación` | `shasum -a 256 -c SHA256SUMS` | `shasum -a 256 -c SHA256SUMS` | Valida los ocho assets de una sola vez. |
 | `Instalación` | Ver bloque **Instalación en macOS**. | Igual que arm64, cambiando el nombre del asset. | Descargar, verificar, extraer, instalar en `$HOME/.local/bin` y ejecutar `lair install`. |
 | `Notas` | Asset por defecto en Macs con Apple Silicon. | Asset para Macs Intel. Si Gatekeeper bloquea el binario: `xattr -d com.apple.quarantine "$HOME/.local/bin/lair"`. | No se genera plan privilegiado; la CA se confía solo en el perfil de usuario. |
 
@@ -157,8 +170,8 @@ Para hacer persistente el PATH, añade `export PATH="$HOME/.local/bin:$PATH"` a 
 | `Arquitectura` | `amd64` (x86_64) | `arm64` (AArch64) | Elegir según el procesador: la mayoría de PCs → amd64; Surface/ARM → arm64. |
 | `Formato` | `.zip` | `.zip` | Se extrae con `Expand-Archive`. |
 | `Binario` | `lair.exe` | `lair.exe` | Ejecutable instalado en `%LOCALAPPDATA%\Lair\lair.exe`. |
-| `Tamaño` | 3 804 437 bytes (3.62 MiB) | 3 384 610 bytes (3.22 MiB) | Tamaño del comprimido publicado. |
-| `SHA-256` | `692f4dc6d4b035ec1be181545f7dd03c3e434c80bc634cebfe92c0a8052c3fe2` | `bbec4df4dae8e5755a872f82ca0215b279faf0bf02cc46a09ba9463ddeaf0bbf` | Hash oficial; comparar con `dist/SHA256SUMS`. |
+| `Tamaño` | 3 869 352 bytes (3.69 MiB) | 3 442 541 bytes (3.28 MiB) | Tamaño del comprimido publicado. |
+| `SHA-256` | `b3dfd8a04698626e924059ca03ef974400bc2264444cf1f790158b4eb5705341` | `8b16041d99fba85a94516a6f3cd19cec8ea5455f689001a3b059fafa8915dc57` | Hash oficial; comparar con `dist/SHA256SUMS`. |
 | `Verificación` | `Get-FileHash lair.zip -Algorithm SHA256` | `Get-FileHash lair.zip -Algorithm SHA256` | Comparar el valor con la línea correspondiente de `SHA256SUMS`. |
 | `Instalación` | Ver bloque **Instalación en Windows (PowerShell)**. | Igual que amd64, cambiando el nombre del asset. | Descargar, verificar, `Expand-Archive` en `%LOCALAPPDATA%\Lair` y ejecutar `lair.exe install`. |
 | `Notas` | Asset por defecto en PCs Windows. | Asset para Windows en ARM. | No se genera plan privilegiado; la CA se confía solo en el perfil de usuario. |
@@ -234,6 +247,14 @@ Para hacer persistente el PATH:
 - CLI completa: `install`, `uninstall`, `status`, `restart`, `update`, `php`, `node`, `services`, `park`, `link`, `unlink`, `secure`, `pin`, `isolate`, `logs`, `daemon`, `doctor` y `exec` oculto.
 - Flags del daemon: `--foreground`, `--no-web`, `--no-dns`, `--no-api`, `--dns-port`, `--http-port`, `--https-port` y `--domain`.
 
+### Fase 5 — Panel web y lanzador
+
+- SPA embebida (`internal/ui`, `go:embed`): panel, versiones, sitios, servicios, logs y sistema, con tema claro/oscuro y diseño minimalista. Servida por el daemon en `127.0.0.1:9797` (`--ui-port N`, `--no-ui`).
+- Bridge JSON `/api` con token en `X-Lair-Token` y comparación en tiempo constante. Reutiliza el mismo `Dispatcher` que la CLI: no hay acciones exclusivas de la UI.
+- `lair ui` arranca el daemon si hace falta, lee `run/ui.url` (`0600`) y abre el navegador con `xdg-open` / `open` / `rundll32`.
+- El `.deb` incluye `/usr/share/applications/lair.desktop` e `/usr/share/icons/hicolor/scalable/apps/lair.svg`.
+- Se corrige además el router duplicado: el servidor HTTP y el `Engine` comparten ahora el mismo `Router`, de modo que los sitios aparcados se sirven realmente.
+
 ---
 
 ## Correcciones incluidas
@@ -288,6 +309,7 @@ sudo systemctl enable --now lair@$USER
 lair php install 8.4 && lair php use 8.4
 lair node install 22 && lair node default 22
 node -v && npm -v && php -v && lair doctor
+lair ui                      # abre el panel de administración en el navegador
 ```
 
 ---
@@ -295,6 +317,8 @@ node -v && npm -v && php -v && lair doctor
 ## Publicación del release
 
 Lair se publica en el repositorio **`LC-jhony/lair`** (antes `valet-deck`, renombrado conservando el historial). La rama `main`, el tag anotado `v1.0.0`, estos campos y estos assets están preparados localmente en `/home/jhony/Documentos/lair`.
+
+Los artefactos se reconstruyen de forma reproducible con `GO=<go> scripts/build-dist.sh 1.0.0`: compila los seis binarios estáticos, genera los comprimidos, los dos `.deb` (con lanzador e icono) y `SHA256SUMS` verificado.
 
 La publicación requiere credenciales de GitHub (un PAT con permiso `repo` o `gh auth login`). Hay dos formas:
 

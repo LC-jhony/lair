@@ -91,6 +91,9 @@ func run(args []string, out, errOut io.Writer) error {
 	if cmd == "exec" {
 		return runExec(rest, out, errOut)
 	}
+	if cmd == "ui" {
+		return runUI(rest, out, errOut)
+	}
 
 	c, err := newCtx(out, errOut)
 	if err != nil {
@@ -169,6 +172,7 @@ Usage:
   lair pin php|node <version>        Write .lairrc in the current project
   lair isolate php|node <version>    Pin a version for a parked site (--off to clear)
   lair logs [name]                   Show a log file (or list logs)
-  lair daemon --foreground           Run the daemon in the foreground
+  lair ui                            Open the embedded web admin UI in your browser
+  lair daemon --foreground           Run the daemon in the foreground (--no-ui, --ui-port N)
 `)
 }

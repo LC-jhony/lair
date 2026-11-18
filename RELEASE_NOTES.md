@@ -6,7 +6,7 @@ Primera versión etiquetada de **Lair**: entorno de desarrollo local para **PHP 
 
 ## Campos del release
 
-Esta versión publica **un asset por plataforma y arquitectura**: Linux, macOS y Windows, cada uno en `amd64` y `arm64`. Los seis assets son comprimidos que contienen `lair` (o `lair.exe`), `README.md` y `RELEASE_NOTES.md`. Se compilaron con `CGO_ENABLED=0`, `-trimpath` y `-ldflags "-s -w"` (binarios estáticos, sin dependencias externas).
+Esta versión publica **un asset por plataforma y arquitectura**: Linux, macOS y Windows, cada uno en `amd64` y `arm64`. Los seis comprimidos contienen `lair` (o `lair.exe`), `README.md` y `RELEASE_NOTES.md`; además, Linux incluye **dos paquetes `.deb`** (`amd64` y `arm64`) para instalar con `dpkg`/`apt`. Los binarios se compilaron con `CGO_ENABLED=0`, `-trimpath` y `-ldflags "-s -w"` (estáticos, sin dependencias externas).
 
 ### Campos generales
 
@@ -18,7 +18,7 @@ Esta versión publica **un asset por plataforma y arquitectura**: Linux, macOS y
 | `body` | Este `RELEASE_NOTES.md` | Descripción publicada: novedades, campos de cada asset, instalación, verificación y seguridad. |
 | `draft` | `false` | El release se publica de inmediato, no queda como borrador. |
 | `prerelease` | `false` | Versión estable; no se marca como beta ni *release candidate*. |
-| `assets` | 7 archivos | Seis comprimidos (dos por plataforma) más `SHA256SUMS` con los hashes oficiales. |
+| `assets` | 9 archivos | Seis comprimidos (dos por plataforma), dos `.deb` de Linux (`amd64` y `arm64`) y `SHA256SUMS` con los hashes oficiales. |
 | `repository` | `LC-jhony/lair` | Repositorio de GitHub donde se crea el release. |
 
 ### Campos de cada asset (comunes a las tres plataformas)
@@ -28,7 +28,7 @@ Esta versión publica **un asset por plataforma y arquitectura**: Linux, macOS y
 | `Asset` | Nombre del archivo adjunto al release; es lo que descarga el usuario. |
 | `Sistema operativo` | Plataforma de destino: Linux, macOS o Windows. |
 | `Arquitectura` | `amd64` (x86_64, Intel/AMD de 64 bits) o `arm64` (AArch64, Apple Silicon / ARM de 64 bits). |
-| `Formato` | `.tar.gz` en Linux y macOS; `.zip` en Windows. |
+| `Formato` | `.tar.gz` en Linux y macOS; `.zip` en Windows; además `.deb` en Linux. |
 | `Binario` | `lair` en Linux y macOS; `lair.exe` en Windows. |
 | `Tamaño` | Bytes del asset comprimido y su equivalente en MiB. |
 | `SHA-256` | Hash del **archivo publicado**. Es la fuente de confianza: el host de descarga no aporta confianza. |
@@ -49,8 +49,14 @@ Esta versión publica **un asset por plataforma y arquitectura**: Linux, macOS y
 | `Binario` | `lair` | `lair` | Ejecutable instalado en `$HOME/.local/bin/lair`. |
 | `Tamaño` | 3 717 359 bytes (3.54 MiB) | 3 338 438 bytes (3.18 MiB) | Tamaño del comprimido publicado. |
 | `SHA-256` | `83a01faa19f121d19701c6a73ef0f12c8ac1ff37bcf4c58368428bc0ea4551c8` | `ed97236d32fb491381185dbe009659460d94b8d89ed6e8e1c1473b87a70b4bd0` | Hash oficial; comparar con `dist/SHA256SUMS`. |
-| `Verificación` | `sha256sum -c SHA256SUMS` | `sha256sum -c SHA256SUMS` | Valida los seis assets de una sola vez. |
-| `Instalación` | Ver bloque **Instalación en Linux**. | Igual que amd64, cambiando el nombre del asset. | Descargar, verificar, extraer, instalar en `$HOME/.local/bin` y ejecutar `lair install`. |
+| `Asset (.deb)` | `lair_1.0.0_amd64.deb` | `lair_1.0.0_arm64.deb` | Paquete Debian para instalar con `sudo dpkg -i`. |
+| `Sistema operativo (.deb)` | Debian/Ubuntu y derivados | Debian/Ubuntu y derivados en ARM | El binario es estático; el paquete solo instala archivos. |
+| `Arquitectura (.deb)` | `amd64` | `arm64` | Debe coincidir con `dpkg --print-architecture`. |
+| `Formato (.deb)` | `.deb` | `.deb` | Paquete Debian 2.0 con `root:root` y `usr/bin/lair`. |
+| `Tamaño (.deb)` | 3 151 864 bytes (3.01 MiB) | 2 803 526 bytes (2.67 MiB) | Tamaño del paquete publicado. |
+| `SHA-256 (.deb)` | `d8b46432f01126e199aa618000e7056e5a3bbd93430b76091362671a6bc87e44` | `599720fa7b2cf830012c78ecd1b672d0d16afe4aa8de57a5ef3224f39695611b` | Hash oficial del `.deb`; comparar con `SHA256SUMS`. |
+| `Verificación` | `sha256sum -c SHA256SUMS` | `sha256sum -c SHA256SUMS` | Valida los ocho assets de una sola vez. |
+| `Instalación` | Ver bloques **Instalación en Linux** e **Instalación con .deb**. | Igual que amd64, cambiando el nombre del asset. | Comprimido en `$HOME/.local/bin` o paquete en `/usr/bin/lair`. |
 | `Notas` | Plan privilegiado disponible: systemd, polkit, `systemd-resolved` y CA del sistema. | Igual que amd64; usar este asset en equipos ARM (Raspberry Pi, servidores ARM). | Linux es la única plataforma con `setup-privileged.sh`. |
 
 **Instalación en Linux**
@@ -77,6 +83,28 @@ sudo systemctl enable --now "lair@$USER"
 ```
 
 Tras abrir una terminal nueva: `lair php install 8.4 && lair php use 8.4`, `lair node install 22 && lair node default 22` y `lair doctor`.
+
+**Instalación con .deb en Linux (alternativa)**
+
+```sh
+# 1. Descargar el paquete de tu arquitectura y el SHA256SUMS
+curl -fLO https://github.com/LC-jhony/lair/releases/download/v1.0.0/lair_1.0.0_amd64.deb
+curl -fLO https://github.com/LC-jhony/lair/releases/download/v1.0.0/SHA256SUMS
+
+# 2. Verificar antes de instalar
+sha256sum -c SHA256SUMS
+
+# 3. Instalar el paquete (instala /usr/bin/lair, docs y copyright)
+sudo dpkg -i lair_1.0.0_amd64.deb
+
+# 4. Arrancar Lair y aplicar el plan privilegiado (revisarlo antes)
+lair install
+sudo "$HOME/.local/share/lair/setup-privileged.sh"
+sudo "$HOME/.local/share/lair/trust-ca.sh" --add
+sudo systemctl enable --now "lair@$USER"
+```
+
+En ARM cambia `amd64` por `arm64`. Comprueba tu arquitectura con `dpkg --print-architecture`. El `.deb` instala el binario en `/usr/bin/lair` (disponible para todos los usuarios); Lair guarda sus datos igualmente bajo `$LAIR_HOME` del usuario que lo ejecuta. Para desinstalar el paquete: `sudo dpkg -r lair`; recuerda ejecutar antes `lair uninstall` para limpiar el estado del usuario.
 
 ---
 
@@ -277,7 +305,7 @@ cd /home/jhony/Documentos/lair
 ./scripts/create-release.sh
 ```
 
-El script valida la autenticación, comprueba que el tag apunte a `HEAD`, sube `main` y el tag, y crea el release con el título, el cuerpo y los siete assets descritos arriba.
+El script valida la autenticación, comprueba que el tag apunte a `HEAD`, sube `main` y el tag, y crea el release con el título, el cuerpo y los nueve assets descritos arriba. Si el release ya existe, primero elimina los assets antiguos con el mismo nombre y vuelve a subirlos (necesario tras regenerar `SHA256SUMS`).
 
 **Opción B — comandos manuales:**
 
@@ -291,6 +319,8 @@ gh release create v1.0.0 \
   --notes-file RELEASE_NOTES.md \
   --verify-tag \
   dist/SHA256SUMS \
+  dist/lair_1.0.0_amd64.deb \
+  dist/lair_1.0.0_arm64.deb \
   dist/lair_1.0.0_darwin_amd64.tar.gz \
   dist/lair_1.0.0_darwin_arm64.tar.gz \
   dist/lair_1.0.0_linux_amd64.tar.gz \

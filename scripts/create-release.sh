@@ -13,6 +13,8 @@ cd "$ROOT"
 
 ASSETS=(
   "dist/SHA256SUMS"
+  "dist/lair_1.0.0_amd64.deb"
+  "dist/lair_1.0.0_arm64.deb"
   "dist/lair_1.0.0_darwin_amd64.tar.gz"
   "dist/lair_1.0.0_darwin_arm64.tar.gz"
   "dist/lair_1.0.0_linux_amd64.tar.gz"
@@ -49,12 +51,24 @@ echo "==> Subiendo rama y tag a $REPO"
 git push origin main
 git push origin "$TAG"
 
-echo "==> Creando el release $TAG"
-gh release create "$TAG" \
-  --repo "$REPO" \
-  --title "$TITLE" \
-  --notes-file "$NOTES" \
-  --verify-tag \
-  "${ASSETS[@]}"
+if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+  echo "==> El release ya existe: actualizando notas y reemplazando assets"
+  gh release edit "$TAG" --repo "$REPO" --title "$TITLE" --notes-file "$NOTES"
+  for asset in "${ASSETS[@]}"; do
+    name="$(basename "$asset")"
+    if gh release view "$TAG" --repo "$REPO" --json assets --jq ".assets[].name" | grep -qx "$name"; then
+      gh release delete-asset "$TAG" "$name" --repo "$REPO" --yes
+    fi
+  done
+  gh release upload "$TAG" "${ASSETS[@]}" --repo "$REPO" --clobber
+else
+  echo "==> Creando el release $TAG"
+  gh release create "$TAG" \
+    --repo "$REPO" \
+    --title "$TITLE" \
+    --notes-file "$NOTES" \
+    --verify-tag \
+    "${ASSETS[@]}"
+fi
 
 echo "Listo: https://github.com/$REPO/releases/tag/$TAG"

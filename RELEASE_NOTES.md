@@ -4,50 +4,72 @@ Primera versión etiquetada de **Lair**: entorno de desarrollo local para **PHP 
 
 ---
 
-## Artefactos de la release
+## Campos del release
 
-Los seis binarios se compilaron con `CGO_ENABLED=0`, `-trimpath` y `-ldflags "-s -w"` (estáticos, sin dependencias externas). Cada archivo contiene `lair` (o `lair.exe`), `README.md` y estas notas.
+Esta versión publica **un asset por plataforma y arquitectura**: Linux, macOS y Windows, cada uno en `amd64` y `arm64`. Los seis assets son comprimidos que contienen `lair` (o `lair.exe`), `README.md` y `RELEASE_NOTES.md`. Se compilaron con `CGO_ENABLED=0`, `-trimpath` y `-ldflags "-s -w"` (binarios estáticos, sin dependencias externas).
 
-| Sistema operativo | Arquitectura | Asset |
+### Campos generales
+
+| Campo | Valor | Descripción |
 | --- | --- | --- |
-| macOS | Apple Silicon (arm64) | `lair_1.0.0_darwin_arm64.tar.gz` |
-| macOS | Intel (x86_64) | `lair_1.0.0_darwin_amd64.tar.gz` |
-| Linux | x86_64 | `lair_1.0.0_linux_amd64.tar.gz` |
-| Linux | arm64 | `lair_1.0.0_linux_arm64.tar.gz` |
-| Windows | x86_64 | `lair_1.0.0_windows_amd64.zip` |
-| Windows | arm64 | `lair_1.0.0_windows_arm64.zip` |
+| `tag` | `v1.0.0` | Etiqueta **anotada** de Git. Identifica esta versión de forma inmutable; no se reutiliza. |
+| `target` | `main` | Commit etiquetado (la rama `main` en el momento del release); se comprueba con `git rev-parse v1.0.0^{commit}`. Incluye el commit inicial de GitHub integrado con la historia de Lair. |
+| `title` | `Lair v1.0.0` | Título que se muestra en la página del release. |
+| `body` | Este `RELEASE_NOTES.md` | Descripción publicada: novedades, campos de cada asset, instalación, verificación y seguridad. |
+| `draft` | `false` | El release se publica de inmediato, no queda como borrador. |
+| `prerelease` | `false` | Versión estable; no se marca como beta ni *release candidate*. |
+| `assets` | 7 archivos | Seis comprimidos (dos por plataforma) más `SHA256SUMS` con los hashes oficiales. |
+| `repository` | `LC-jhony/lair` | Repositorio de GitHub donde se crea el release. |
 
-El archivo `SHA256SUMS` publicado junto a los assets permite verificar la descarga:
+### Campos de cada asset (comunes a las tres plataformas)
+
+| Campo | Descripción |
+| --- | --- |
+| `Asset` | Nombre del archivo adjunto al release; es lo que descarga el usuario. |
+| `Sistema operativo` | Plataforma de destino: Linux, macOS o Windows. |
+| `Arquitectura` | `amd64` (x86_64, Intel/AMD de 64 bits) o `arm64` (AArch64, Apple Silicon / ARM de 64 bits). |
+| `Formato` | `.tar.gz` en Linux y macOS; `.zip` en Windows. |
+| `Binario` | `lair` en Linux y macOS; `lair.exe` en Windows. |
+| `Tamaño` | Bytes del asset comprimido y su equivalente en MiB. |
+| `SHA-256` | Hash del **archivo publicado**. Es la fuente de confianza: el host de descarga no aporta confianza. |
+| `Verificación` | Comando que compara el hash local con `SHA256SUMS` antes de ejecutar nada. |
+| `Instalación` | Pasos mínimos: descargar, descomprimir, instalar el binario en el PATH y ejecutar `lair install`. |
+| `Notas` | Particularidades de la plataforma (Gatekeeper, PowerShell, plan privilegiado). |
+
+---
+
+### Linux
+
+| Campo | amd64 (x86_64) | arm64 (AArch64) | Descripción |
+| --- | --- | --- | --- |
+| `Asset` | `lair_1.0.0_linux_amd64.tar.gz` | `lair_1.0.0_linux_arm64.tar.gz` | Archivo adjunto al release para esta arquitectura. |
+| `Sistema operativo` | Linux | Linux | Binario estático: no requiere glibc ni dependencias del sistema. |
+| `Arquitectura` | `amd64` | `arm64` | x86_64 (Intel/AMD) frente a AArch64 (ARM de 64 bits). |
+| `Formato` | `.tar.gz` | `.tar.gz` | Se extrae con `tar -xzf`. |
+| `Binario` | `lair` | `lair` | Ejecutable instalado en `$HOME/.local/bin/lair`. |
+| `Tamaño` | 3 717 359 bytes (3.54 MiB) | 3 338 438 bytes (3.18 MiB) | Tamaño del comprimido publicado. |
+| `SHA-256` | `83a01faa19f121d19701c6a73ef0f12c8ac1ff37bcf4c58368428bc0ea4551c8` | `ed97236d32fb491381185dbe009659460d94b8d89ed6e8e1c1473b87a70b4bd0` | Hash oficial; comparar con `dist/SHA256SUMS`. |
+| `Verificación` | `sha256sum -c SHA256SUMS` | `sha256sum -c SHA256SUMS` | Valida los seis assets de una sola vez. |
+| `Instalación` | Ver bloque **Instalación en Linux**. | Igual que amd64, cambiando el nombre del asset. | Descargar, verificar, extraer, instalar en `$HOME/.local/bin` y ejecutar `lair install`. |
+| `Notas` | Plan privilegiado disponible: systemd, polkit, `systemd-resolved` y CA del sistema. | Igual que amd64; usar este asset en equipos ARM (Raspberry Pi, servidores ARM). | Linux es la única plataforma con `setup-privileged.sh`. |
+
+**Instalación en Linux**
 
 ```sh
-sha256sum -c SHA256SUMS     # Linux
-shasum -a 256 -c SHA256SUMS # macOS
-```
-
-### Instalación en macOS
-
-```sh
-curl -fLO https://github.com/LC-jhony/lair/releases/download/v1.0.0/lair_1.0.0_darwin_arm64.tar.gz
-tar -xzf lair_1.0.0_darwin_arm64.tar.gz
-mkdir -p "$HOME/.local/bin"
-install -m 0755 lair "$HOME/.local/bin/lair"
-export PATH="$HOME/.local/bin:$PATH"
-
-"$HOME/.local/bin/lair" install
-"$HOME/.local/bin/lair" doctor
-```
-
-Usa el asset `darwin_amd64` en Macs Intel. Si Gatekeeper bloquea el binario descargado: `xattr -d com.apple.quarantine "$HOME/.local/bin/lair"`.
-
-### Instalación en Linux
-
-```sh
+# 1. Descargar el asset correcto (amd64); para arm64 cambia el nombre del archivo
 curl -fLO https://github.com/LC-jhony/lair/releases/download/v1.0.0/lair_1.0.0_linux_amd64.tar.gz
+curl -fLO https://github.com/LC-jhony/lair/releases/download/v1.0.0/SHA256SUMS
+
+# 2. Verificar la descarga antes de ejecutar
+sha256sum -c SHA256SUMS
+
+# 3. Extraer e instalar en el PATH del usuario
 tar -xzf lair_1.0.0_linux_amd64.tar.gz
 mkdir -p "$HOME/.local/bin"
 install -m 0755 lair "$HOME/.local/bin/lair"
 export PATH="$HOME/.local/bin:$PATH"
 
+# 4. Arrancar Lair y aplicar el plan privilegiado (revisarlo antes de ejecutar)
 "$HOME/.local/bin/lair" install
 sudo "$HOME/.local/share/lair/setup-privileged.sh"
 sudo "$HOME/.local/share/lair/trust-ca.sh" --add
@@ -56,20 +78,90 @@ sudo systemctl enable --now "lair@$USER"
 
 Tras abrir una terminal nueva: `lair php install 8.4 && lair php use 8.4`, `lair node install 22 && lair node default 22` y `lair doctor`.
 
-### Instalación en Windows (PowerShell)
+---
+
+### macOS
+
+| Campo | Apple Silicon (arm64) | Intel (amd64) | Descripción |
+| --- | --- | --- | --- |
+| `Asset` | `lair_1.0.0_darwin_arm64.tar.gz` | `lair_1.0.0_darwin_amd64.tar.gz` | Archivo adjunto al release para esta arquitectura. |
+| `Sistema operativo` | macOS | macOS | Binario estático para macOS; sin Homebrew ni dependencias externas. |
+| `Arquitectura` | `arm64` (Apple Silicon) | `amd64` (x86_64, Intel) | Elegir según el chip: M1/M2/M3/M4 → arm64; Intel → amd64. |
+| `Formato` | `.tar.gz` | `.tar.gz` | Se extrae con `tar -xzf`. |
+| `Binario` | `lair` | `lair` | Ejecutable instalado en `$HOME/.local/bin/lair`. |
+| `Tamaño` | 3 452 974 bytes (3.29 MiB) | 3 765 857 bytes (3.59 MiB) | Tamaño del comprimido publicado. |
+| `SHA-256` | `e7a7cbd1420ab5dfcfcef10925e15efa639701b1f02d364454d145e086a1595e` | `90f22927f29bcbce186735729327f8586303daf6fbd6c1ee9b6da728b711895f` | Hash oficial; comparar con `dist/SHA256SUMS`. |
+| `Verificación` | `shasum -a 256 -c SHA256SUMS` | `shasum -a 256 -c SHA256SUMS` | Valida los seis assets de una sola vez. |
+| `Instalación` | Ver bloque **Instalación en macOS**. | Igual que arm64, cambiando el nombre del asset. | Descargar, verificar, extraer, instalar en `$HOME/.local/bin` y ejecutar `lair install`. |
+| `Notas` | Asset por defecto en Macs con Apple Silicon. | Asset para Macs Intel. Si Gatekeeper bloquea el binario: `xattr -d com.apple.quarantine "$HOME/.local/bin/lair"`. | No se genera plan privilegiado; la CA se confía solo en el perfil de usuario. |
+
+**Instalación en macOS**
+
+```sh
+# 1. Descargar el asset correcto (Apple Silicon); para Intel usa darwin_amd64
+curl -fLO https://github.com/LC-jhony/lair/releases/download/v1.0.0/lair_1.0.0_darwin_arm64.tar.gz
+curl -fLO https://github.com/LC-jhony/lair/releases/download/v1.0.0/SHA256SUMS
+
+# 2. Verificar la descarga antes de ejecutar
+shasum -a 256 -c SHA256SUMS
+
+# 3. Extraer e instalar en el PATH del usuario
+tar -xzf lair_1.0.0_darwin_arm64.tar.gz
+mkdir -p "$HOME/.local/bin"
+install -m 0755 lair "$HOME/.local/bin/lair"
+export PATH="$HOME/.local/bin:$PATH"
+
+# 4. Arrancar Lair y comprobar el entorno
+"$HOME/.local/bin/lair" install
+"$HOME/.local/bin/lair" doctor
+```
+
+Para hacer persistente el PATH, añade `export PATH="$HOME/.local/bin:$PATH"` a `~/.zshrc` (o `~/.bash_profile`). Si Gatekeeper bloquea el binario descargado: `xattr -d com.apple.quarantine "$HOME/.local/bin/lair"`.
+
+---
+
+### Windows
+
+| Campo | amd64 (x86_64) | arm64 | Descripción |
+| --- | --- | --- | --- |
+| `Asset` | `lair_1.0.0_windows_amd64.zip` | `lair_1.0.0_windows_arm64.zip` | Archivo adjunto al release para esta arquitectura. |
+| `Sistema operativo` | Windows 10/11 | Windows 10/11 ARM | Binario estático `lair.exe`; sin dependencias externas. |
+| `Arquitectura` | `amd64` (x86_64) | `arm64` (AArch64) | Elegir según el procesador: la mayoría de PCs → amd64; Surface/ARM → arm64. |
+| `Formato` | `.zip` | `.zip` | Se extrae con `Expand-Archive`. |
+| `Binario` | `lair.exe` | `lair.exe` | Ejecutable instalado en `%LOCALAPPDATA%\Lair\lair.exe`. |
+| `Tamaño` | 3 804 437 bytes (3.62 MiB) | 3 384 610 bytes (3.22 MiB) | Tamaño del comprimido publicado. |
+| `SHA-256` | `692f4dc6d4b035ec1be181545f7dd03c3e434c80bc634cebfe92c0a8052c3fe2` | `bbec4df4dae8e5755a872f82ca0215b279faf0bf02cc46a09ba9463ddeaf0bbf` | Hash oficial; comparar con `dist/SHA256SUMS`. |
+| `Verificación` | `Get-FileHash lair.zip -Algorithm SHA256` | `Get-FileHash lair.zip -Algorithm SHA256` | Comparar el valor con la línea correspondiente de `SHA256SUMS`. |
+| `Instalación` | Ver bloque **Instalación en Windows (PowerShell)**. | Igual que amd64, cambiando el nombre del asset. | Descargar, verificar, `Expand-Archive` en `%LOCALAPPDATA%\Lair` y ejecutar `lair.exe install`. |
+| `Notas` | Asset por defecto en PCs Windows. | Asset para Windows en ARM. | No se genera plan privilegiado; la CA se confía solo en el perfil de usuario. |
+
+**Instalación en Windows (PowerShell)**
 
 ```powershell
+# 1. Descargar el asset correcto (amd64); para ARM usa windows_arm64
 Invoke-WebRequest -Uri "https://github.com/LC-jhony/lair/releases/download/v1.0.0/lair_1.0.0_windows_amd64.zip" -OutFile lair.zip
+Invoke-WebRequest -Uri "https://github.com/LC-jhony/lair/releases/download/v1.0.0/SHA256SUMS" -OutFile SHA256SUMS
+
+# 2. Verificar la descarga antes de ejecutar
+Get-FileHash lair.zip -Algorithm SHA256
+Get-Content SHA256SUMS
+
+# 3. Extraer y añadir al PATH de la sesión
 Expand-Archive lair.zip -DestinationPath "$env:LOCALAPPDATA\Lair" -Force
 $env:Path = "$env:LOCALAPPDATA\Lair;$env:Path"
 
+# 4. Arrancar Lair y comprobar el entorno
 & "$env:LOCALAPPDATA\Lair\lair.exe" install
 & "$env:LOCALAPPDATA\Lair\lair.exe" doctor
 ```
 
-Para hacer persistente el PATH: `[Environment]::SetEnvironmentVariable("Path", "$env:LOCALAPPDATA\Lair;$([Environment]::GetEnvironmentVariable('Path','User'))", "User")`.
+Para hacer persistente el PATH:
 
-> El plan privilegiado (systemd, polkit, `systemd-resolved` e instalar la CA a nivel de sistema) está implementado solo en Linux. En macOS y Windows la CLI, el daemon, DNS en puertos altos, HTTPS con CA de usuario y los shims funcionan, pero no se genera ese plan privilegiado; la CA puede confiarse solo en el perfil de usuario.
+```powershell
+[Environment]::SetEnvironmentVariable("Path", "$env:LOCALAPPDATA\Lair;$([Environment]::GetEnvironmentVariable('Path','User'))", "User")
+```
+
+> **Plan privilegiado:** systemd, polkit, `systemd-resolved` y la CA a nivel de sistema están implementados solo en Linux. En macOS y Windows funcionan la CLI, el daemon, el DNS en puertos altos, HTTPS con CA de usuario y los shims, pero no se genera ese plan; la CA puede confiarse solo en el perfil de usuario.
 
 ---
 
@@ -174,18 +266,37 @@ node -v && npm -v && php -v && lair doctor
 
 ## Publicación del release
 
-Lair se publica en el repositorio **`LC-jhony/lair`** (antes `valet-deck`, renombrado conservando el historial). La rama `main`, el tag anotado `v1.0.0` y estas notas están preparados localmente en `/home/jhony/Documentos/lair`.
+Lair se publica en el repositorio **`LC-jhony/lair`** (antes `valet-deck`, renombrado conservando el historial). La rama `main`, el tag anotado `v1.0.0`, estos campos y estos assets están preparados localmente en `/home/jhony/Documentos/lair`.
 
-Si el repo de GitHub todavía se llama `valet-deck`, renómbralo primero (en la pestaña *Settings → Repository name* o con `gh repo rename lair --repo LC-jhony/valet-deck`). Después, con credenciales de GitHub:
+La publicación requiere credenciales de GitHub (un PAT con permiso `repo` o `gh auth login`). Hay dos formas:
+
+**Opción A — script preparado (recomendado):**
+
+```sh
+cd /home/jhony/Documentos/lair
+./scripts/create-release.sh
+```
+
+El script valida la autenticación, comprueba que el tag apunte a `HEAD`, sube `main` y el tag, y crea el release con el título, el cuerpo y los siete assets descritos arriba.
+
+**Opción B — comandos manuales:**
 
 ```sh
 cd /home/jhony/Documentos/lair
 git push origin main
 git push origin v1.0.0
-gh release create v1.0.0 --repo LC-jhony/lair --title "Lair v1.0.0" \
+gh release create v1.0.0 \
+  --repo LC-jhony/lair \
+  --title "Lair v1.0.0" \
   --notes-file RELEASE_NOTES.md \
+  --verify-tag \
   dist/SHA256SUMS \
-  dist/lair_1.0.0_darwin_amd64.tar.gz dist/lair_1.0.0_darwin_arm64.tar.gz \
-  dist/lair_1.0.0_linux_amd64.tar.gz dist/lair_1.0.0_linux_arm64.tar.gz \
-  dist/lair_1.0.0_windows_amd64.zip dist/lair_1.0.0_windows_arm64.zip
+  dist/lair_1.0.0_darwin_amd64.tar.gz \
+  dist/lair_1.0.0_darwin_arm64.tar.gz \
+  dist/lair_1.0.0_linux_amd64.tar.gz \
+  dist/lair_1.0.0_linux_arm64.tar.gz \
+  dist/lair_1.0.0_windows_amd64.zip \
+  dist/lair_1.0.0_windows_arm64.zip
 ```
+
+> `draft` y `prerelease` se omiten porque `gh` los deja en `false` por defecto, tal como indica la tabla de campos generales.

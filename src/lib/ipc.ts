@@ -282,8 +282,17 @@ function createBrowserBridge(): FlockBridge {
           state.onboarding.caTrusted = false
           write(state)
           return delay({ ok: true }) as Promise<T>
+        case 'caddy_install':
+          // El bridge de navegador no puede descargar binarios: estado de demo.
+          state.caddy = { ...state.caddy, installed: true, version: '2.9.0' }
+          state.onboarding.caddyInstalled = true
+          write(state)
+          return delay({ installed: true, version: '2.9.0' }) as Promise<T>
         case 'caddy_status':
-          return delay(state.caddy) as Promise<T>
+          return delay({
+            ...state.caddy,
+            caTrusted: state.onboarding.caTrusted === true,
+          }) as Promise<T>
         case 'caddy_global_options':
           return delay({ options: String(state.caddy.globalOptions ?? '') }) as Promise<T>
         case 'set_caddy_global_options':
@@ -370,6 +379,11 @@ export const ipc = {
   tailLogs: (siteId: string) => bridge.invoke<{ lines: string[] }>('tail_logs', { siteId }),
   // UI extensions (not in the README command table):
   caddyStatus: () => bridge.invoke<CaddyStatus>('caddy_status'),
+  caddyInstall: (version = '2.9.0') =>
+    bridge.invoke<{ installed: boolean; version: string | null; detail?: string }>(
+      'caddy_install',
+      { version },
+    ),
   caddyCaStatus: () => bridge.invoke<CaStatus>('caddy_ca_status'),
   caddyGlobalOptions: () =>
     bridge.invoke<{ options: string }>('caddy_global_options'),
@@ -423,7 +437,7 @@ export const flock = {
     globalOptions: ipc.caddyGlobalOptions,
     setGlobalOptions: ipc.setCaddyGlobalOptions,
     install: async () => {
-      await ipc.caddyTrust()
+      await ipc.caddyInstall()
       return ipc.caddyStatus()
     },
     trustCa: async (): Promise<TrustCaResult> => {

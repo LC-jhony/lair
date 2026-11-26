@@ -78,6 +78,7 @@ export interface CaddyStatus {
   running: boolean
   version: string | null
   configPath: string | null
+  caTrusted?: boolean
   globalOptions?: string
 }
 

@@ -60,8 +60,8 @@ export function BinaryPanel() {
             <ServerCog className="size-4" />
             Caddy
           </CardTitle>
-          <Badge variant={caddy?.running ? 'success' : 'outline'}>
-            {caddy?.running ? 'En ejecución' : 'No instalado'}
+          <Badge variant={caddy?.running ? 'success' : caddy?.installed ? 'warning' : 'outline'}>
+            {caddy?.running ? 'En ejecución' : caddy?.installed ? 'Instalado · detenido' : 'No instalado'}
           </Badge>
         </CardHeader>
         <CardContent className="space-y-2 text-sm text-muted-foreground">

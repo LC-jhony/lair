@@ -10,8 +10,9 @@ interface StepProps {
 
 export function InstallCaddyStep({ onNext }: StepProps) {
   const { data: caddy } = useCaddyStatus()
-  const { state, installCaddy } = useOnboarding()
-  const installed = Boolean(state?.caddyInstalled || caddy?.installed)
+  const { installCaddy } = useOnboarding()
+  // Solo el binario detectado cuenta como instalado: confiar la CA no instala Caddy.
+  const installed = Boolean(caddy?.installed)
 
   return (
     <div className="space-y-5">

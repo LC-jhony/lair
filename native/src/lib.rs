@@ -175,6 +175,10 @@ async fn dispatch(cmd: &str, args: &str) -> Result<Value, BackendError> {
     }
     "caddy_trust" => wrap(caddy::trust(), "TRUST_FAILED"),
     "caddy_untrust" => wrap(caddy::untrust(), "TRUST_FAILED"),
+    "caddy_install" => {
+      let version = payload["version"].as_str().unwrap_or("2.9.0");
+      wrap(caddy::install(version).await, "HTTP_ERROR")
+    }
     "caddy_status" => wrap(caddy::status().await, "DB_ERROR"),
     "caddy_ca_status" => wrap(caddy::ca_status().await, "CA_UNAVAILABLE"),
     "caddy_global_options" => wrap(caddy::global_options(), "DB_ERROR"),

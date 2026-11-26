@@ -2,7 +2,7 @@ import { execFileSync, spawn } from 'node:child_process'
 import { lookup } from 'node:dns/promises'
 import { connect } from 'node:net'
 import { createPublicKey, randomUUID, verify as verifySignature } from 'node:crypto'
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { app, ipcMain, shell } from 'electron'
 
@@ -228,6 +228,49 @@ const backend: BackendLike | null = (() => {
 })()
 
 const CADDY_ADMIN = 'http://localhost:2019'
+
+function caddyBinaryPath(): string {
+  return join(app.getPath('home'), '.local', 'share', 'lair', 'bin', 'caddy')
+}
+
+function caddyVersion(): string | null {
+  for (const candidate of [caddyBinaryPath(), 'caddy']) {
+    try {
+      const output = execFileSync(candidate, ['version'], { encoding: 'utf8' })
+      return output.split(/\s+/)[1] ?? null
+    } catch {
+      // Se prueba el siguiente candidato.
+    }
+  }
+  return null
+}
+
+async function installCaddyBinary(version: string): Promise<string | null> {
+  const target = caddyBinaryPath()
+  if (existsSync(target)) return caddyVersion()
+  const triple =
+    process.platform === 'win32'
+      ? 'windows_amd64'
+      : process.platform === 'darwin'
+        ? 'mac_amd64'
+        : process.arch === 'arm64'
+          ? 'linux_arm64'
+          : 'linux_amd64'
+  const archive = `caddy_${version}_${triple}.tar.gz`
+  const url = `https://github.com/caddyserver/caddy/releases/download/v${version}/${archive}`
+  const temporary = join(app.getPath('temp'), `lair-caddy-${Date.now()}`)
+  mkdirSync(temporary, { recursive: true })
+  mkdirSync(dirname(target), { recursive: true })
+  try {
+    execFileSync('curl', ['-fsSL', url, '-o', join(temporary, archive)])
+    execFileSync('tar', ['-xzf', join(temporary, archive), '-C', temporary, 'caddy'])
+    copyFileSync(join(temporary, 'caddy'), target)
+    chmodSync(target, 0o755)
+    return caddyVersion()
+  } catch {
+    return null
+  }
+}
 
 async function portOpen(port: number): Promise<boolean> {
   return new Promise((resolve) => {
@@ -547,28 +590,38 @@ async function localInvoke(cmd: string, args: Record<string, unknown>): Promise<
         rootCommonName: info.root_common_name ?? '',
       }
     }
+    case 'caddy_install': {
+      const version = await installCaddyBinary(String(args.version ?? '2.9.0'))
+      state.caddy = {
+        ...state.caddy,
+        installed: version !== null,
+        version,
+      }
+      state.onboarding.caddyInstalled = version !== null
+      writeState(state)
+      return {
+        installed: version !== null,
+        version,
+        detail: version ? `Caddy ${version} instalado` : 'No se pudo descargar Caddy',
+      }
+    }
     case 'caddy_trust':
       state.onboarding.caTrusted = true
-      state.caddy = { ...state.caddy, installed: true, running: true, version: '2.9.0' }
       writeState(state)
-      return { ok: true }
+      return { ok: true, detail: 'CA marcada como confiada' }
     case 'caddy_untrust':
       state.onboarding.caTrusted = false
       writeState(state)
       return { ok: true }
     case 'caddy_status': {
       const response = await caddyApi('/config/')
-      let version: string | null
-      try {
-        const output = execFileSync('caddy', ['version'], { encoding: 'utf8' })
-        version = output.split(/\s+/)[1] ?? null
-      } catch {
-        version = state.caddy.version as string | null
-      }
+      const version = caddyVersion()
       return {
-        ...state.caddy,
+        configPath: state.caddy.configPath,
+        installed: version !== null,
         running: Boolean(response?.ok),
         version,
+        caTrusted: state.onboarding.caTrusted === true,
       }
     }
     case 'get_onboarding':

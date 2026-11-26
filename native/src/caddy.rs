@@ -1,5 +1,8 @@
+use std::io::Cursor;
 use std::path::PathBuf;
 use std::process::Command;
+
+use flate2::read::GzDecoder;
 
 use reqwest::Client;
 use serde_json::{json, Value};
@@ -119,6 +122,75 @@ pub fn generate_caddyfile(
   s
 }
 
+fn binary_path() -> Result<PathBuf, String> {
+  Ok(
+    platform::data_dir()?
+      .join("bin")
+      .join(if cfg!(windows) { "caddy.exe" } else { "caddy" }),
+  )
+}
+
+/// Descarga el binario oficial de Caddy y lo instala en el directorio de Lair.
+pub async fn install(version: &str) -> Result<Value, String> {
+  let target = binary_path()?;
+  if target.exists() {
+    return Ok(json!({ "installed": true, "version": version, "detail": "Ya instalado" }));
+  }
+  let triple = if cfg!(windows) {
+    "windows_amd64"
+  } else if cfg!(target_os = "macos") {
+    if cfg!(target_arch = "aarch64") {
+      "mac_arm64"
+    } else {
+      "mac_amd64"
+    }
+  } else if cfg!(target_arch = "aarch64") {
+    "linux_arm64"
+  } else {
+    "linux_amd64"
+  };
+  let archive_name = format!("caddy_{version}_{triple}.tar.gz");
+  let url =
+    format!("https://github.com/caddyserver/caddy/releases/download/v{version}/{archive_name}");
+  let bytes = Client::new()
+    .get(&url)
+    .send()
+    .await
+    .map_err(|e| format!("HTTP_ERROR: {e}"))?
+    .bytes()
+    .await
+    .map_err(|e| e.to_string())?;
+
+  let staging = platform::data_dir()?.join("staging").join("caddy-install");
+  if staging.exists() {
+    std::fs::remove_dir_all(&staging).map_err(|e| e.to_string())?;
+  }
+  std::fs::create_dir_all(&staging).map_err(|e| e.to_string())?;
+  tar::Archive::new(GzDecoder::new(Cursor::new(&bytes)))
+    .unpack(&staging)
+    .map_err(|e| format!("EXTRACT_FAILED: {e}"))?;
+
+  let downloaded = staging.join(if cfg!(windows) { "caddy.exe" } else { "caddy" });
+  if !downloaded.exists() {
+    return Err("EXTRACT_FAILED: binario caddy no encontrado".to_string());
+  }
+  std::fs::create_dir_all(
+    target
+      .parent()
+      .ok_or_else(|| "Ruta de destino inválida".to_string())?,
+  )
+  .map_err(|e| e.to_string())?;
+  std::fs::copy(&downloaded, &target).map_err(|e| e.to_string())?;
+  #[cfg(unix)]
+  {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o755))
+      .map_err(|e| e.to_string())?;
+  }
+  let _ = std::fs::remove_dir_all(&staging);
+  Ok(json!({ "installed": true, "version": version, "detail": "Caddy instalado" }))
+}
+
 /// `running` se comprueba contra el endpoint de administración, no contra `caddy version`
 /// (que solo indica que el binario existe).
 pub async fn status() -> Result<Value, String> {
@@ -129,10 +201,7 @@ pub async fn status() -> Result<Value, String> {
     .filter(|output| output.status.success())
     .and_then(|output| String::from_utf8(output.stdout).ok())
     .and_then(|text| text.split_whitespace().nth(1).map(str::to_string));
-  let installed = version.is_some()
-    || db::get_state("caddy_installed")?
-      .map(|value| value == "true")
-      .unwrap_or(false);
+  let installed = version.is_some() || binary_path().map(|path| path.exists()).unwrap_or(false);
   let running = Client::new()
     .get(format!("{ADMIN}/config/"))
     .timeout(std::time::Duration::from_millis(1500))
@@ -140,10 +209,14 @@ pub async fn status() -> Result<Value, String> {
     .await
     .map(|response| response.status().is_success())
     .unwrap_or(false);
+  let ca_trusted = db::get_state("ca_trusted")?
+    .map(|value| value == "true")
+    .unwrap_or(false);
   Ok(json!({
       "installed": installed,
       "running": running,
       "version": version,
+      "caTrusted": ca_trusted,
       "configPath": platform::config_dir()?.join("Caddyfile").to_string_lossy(),
   }))
 }
@@ -191,7 +264,6 @@ pub fn trust() -> Result<Value, String> {
     ),
     Err(error) => format!("caddy CLI no disponible ({error}); estado registrado"),
   };
-  db::set_state("caddy_installed", "true")?;
   db::set_state("ca_trusted", "true")?;
   Ok(json!({ "ok": true, "detail": detail }))
 }

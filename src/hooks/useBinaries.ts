@@ -1,0 +1,78 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { flock } from '@/lib/ipc'
+
+export const binariesQueryKey = ['binaries'] as const
+export const versionsQueryKey = (packageName?: string) =>
+  ['versions', packageName ?? 'all'] as const
+export const caddyQueryKey = ['caddy'] as const
+
+function refreshBinaries(client: ReturnType<typeof useQueryClient>) {
+  void client.invalidateQueries({ queryKey: binariesQueryKey })
+  void client.invalidateQueries({ queryKey: ['onboarding'] })
+}
+
+export function useBinaries() {
+  return useQuery({
+    queryKey: binariesQueryKey,
+    queryFn: () => flock.binaries.list(),
+  })
+}
+
+export function useVersions(packageName?: string) {
+  return useQuery({
+    queryKey: versionsQueryKey(packageName),
+    queryFn: () => flock.binaries.versions(packageName),
+  })
+}
+
+export function useCaddyStatus() {
+  return useQuery({
+    queryKey: caddyQueryKey,
+    queryFn: () => flock.caddy.status(),
+  })
+}
+
+/** Instala una versión concreta del catálogo firmado. */
+export function useInstallVersion() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: { package: string; version: string }) =>
+      flock.binaries.install(payload),
+    onSuccess: () => refreshBinaries(client),
+  })
+}
+
+export function useSetDefaultVersion() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: { package: string; version: string }) =>
+      flock.binaries.setDefault(payload),
+    onSuccess: () => refreshBinaries(client),
+  })
+}
+
+export function useUninstallVersion() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: { package: string; version: string }) =>
+      flock.binaries.uninstall(payload),
+    onSuccess: () => refreshBinaries(client),
+  })
+}
+
+export function useInstallComposer() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: () => flock.binaries.installComposer(),
+    onSuccess: () => refreshBinaries(client),
+  })
+}
+
+/** Compatibilidad con el onboarding y el demo anterior. */
+export function useInstallBinary() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => flock.binaries.installLatest(id),
+    onSuccess: () => refreshBinaries(client),
+  })
+}

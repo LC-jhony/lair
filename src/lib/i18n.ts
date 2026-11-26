@@ -44,6 +44,7 @@ const en: Dictionary = {
   'pane.back': 'Back',
   'banner.dismiss': 'Dismiss',
   'banner.error': 'The last action failed',
+  'banner.notice': 'Information',
 
   'theme.label': 'Appearance',
   'theme.light': 'Light',
@@ -108,6 +109,7 @@ const es: Dictionary = {
   'pane.back': 'Atrás',
   'banner.dismiss': 'Descartar',
   'banner.error': 'La última acción falló',
+  'banner.notice': 'Información',
 
   'theme.label': 'Apariencia',
   'theme.light': 'Claro',

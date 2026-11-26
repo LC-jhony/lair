@@ -73,7 +73,9 @@ export function useUpdateSite() {
       try {
         const result = await reload.mutateAsync(after)
         if ((result as { skipped?: boolean })?.skipped) {
-          banner.report('HTTPS guardado, pero Caddy no recargó: admin :2019 no disponible.')
+          banner.notify(
+            'HTTPS guardado y Caddyfile actualizado. Caddy no recargó: admin :2019 no disponible.',
+          )
         } else {
           banner.report(null)
         }
@@ -141,7 +143,7 @@ export function useReloadCaddy() {
       const data = result as { warnings?: Array<{ message?: string }>; skipped?: boolean }
       const warnings = data?.warnings ?? []
       if (data?.skipped) {
-        banner.report('Caddy no recargó: admin :2019 no disponible.')
+        banner.notify('Caddyfile guardado. Caddy no recargó: admin :2019 no disponible.')
       } else {
         banner.report(
           warnings.length ? warnings.map((item) => item.message ?? 'advertencia').join(' · ') : null,

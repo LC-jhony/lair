@@ -2,7 +2,7 @@ import { execFileSync, spawn } from 'node:child_process'
 import { lookup } from 'node:dns/promises'
 import { connect } from 'node:net'
 import { createPublicKey, randomUUID, verify as verifySignature } from 'node:crypto'
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { app, ipcMain, shell } from 'electron'
 
@@ -261,7 +261,9 @@ function caddyfileForSite(site: Record<string, unknown>): string {
   return `${config}}\n`
 }
 
-async function reloadCaddyConfig(state: LocalState): Promise<{ ok: true; skipped?: boolean; warnings?: unknown[] }> {
+async function reloadCaddyConfig(
+  state: LocalState,
+): Promise<{ ok: true; skipped?: boolean; warnings?: unknown[]; configPath?: string }> {
   const globals = String(state.caddy.globalOptions ?? '')
   const config = (globals.trim() ? `${globals.trim()}\n\n` : '') + state.sites.map(caddyfileForSite).join('\n')
   const adapted = await caddyApi('/adapt', {
@@ -269,7 +271,16 @@ async function reloadCaddyConfig(state: LocalState): Promise<{ ok: true; skipped
     headers: { 'Content-Type': 'text/caddyfile' },
     body: config,
   })
-  if (!adapted?.ok) return { ok: true, skipped: true }
+  if (!adapted?.ok) {
+    const configDir = join(app.getPath('home'), '.local', 'share', 'lair', 'config')
+    mkdirSync(configDir, { recursive: true })
+    const target = join(configDir, 'Caddyfile')
+    if (existsSync(target)) {
+      copyFileSync(target, join(configDir, `Caddyfile.${Date.now()}`))
+    }
+    writeFileSync(target, config)
+    return { ok: true, skipped: true, configPath: target }
+  }
   const response = await caddyApi('/load', {
     method: 'POST',
     headers: { 'Content-Type': 'text/caddyfile', 'Cache-Control': 'must-revalidate' },

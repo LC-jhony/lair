@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::process::Command;
 
 use reqwest::Client;
@@ -35,38 +36,55 @@ pub async fn validate(caddyfile: &str) -> Result<Value, String> {
   Ok(json!({ "ok": true, "warnings": warnings }))
 }
 
-pub async fn reload(caddyfile: &str) -> Result<Value, String> {
-  // 1. Adaptar y validar antes de aplicar; conservamos los warnings del adaptador.
-  let adapted = adapt(caddyfile).await?;
-  let warnings = adapted
-    .get("warnings")
-    .cloned()
-    .unwrap_or_else(|| json!([]));
-
-  // 2. Guardar el Caddyfile anterior para poder revertir
+/// Guarda el Caddyfile con backup antes de intentar aplicarlo, aunque falle la API.
+pub fn save_config(caddyfile: &str) -> Result<PathBuf, String> {
   let config_dir = platform::config_dir()?;
   std::fs::create_dir_all(&config_dir).map_err(|e| e.to_string())?;
   let current = config_dir.join("Caddyfile");
   if current.exists() {
     let stamp = chrono::Utc::now().format("%Y%m%dT%H%M%SZ");
-    let backup = config_dir.join(format!("Caddyfile.{stamp}"));
-    std::fs::copy(&current, backup).map_err(|e| e.to_string())?;
+    std::fs::copy(&current, config_dir.join(format!("Caddyfile.{stamp}")))
+      .map_err(|e| e.to_string())?;
   }
+  std::fs::write(&current, caddyfile).map_err(|e| e.to_string())?;
+  Ok(current)
+}
 
-  // 3. Aplicar atómicamente
-  let res = Client::new()
+pub async fn reload(caddyfile: &str) -> Result<Value, String> {
+  // El Caddyfile se persiste aunque no haya admin disponible: siempre queda una config lista.
+  let saved = save_config(caddyfile)?;
+  let skipped = || {
+    json!({
+      "ok": true,
+      "skipped": true,
+      "configPath": saved.to_string_lossy()
+    })
+  };
+
+  let adapted = match adapt(caddyfile).await {
+    Ok(value) => value,
+    Err(_) => return Ok(skipped()),
+  };
+  let warnings = adapted
+    .get("warnings")
+    .cloned()
+    .unwrap_or_else(|| json!([]));
+
+  let response = Client::new()
     .post(format!("{ADMIN}/load"))
     .header("Content-Type", "text/caddyfile")
     // Fuerza el reload aunque la config sea idéntica a la activa.
     .header("Cache-Control", "must-revalidate")
     .body(caddyfile.to_string())
     .send()
-    .await
-    .map_err(|e| e.to_string())?;
-  if !res.status().is_success() {
-    return Err(format!("RELOAD_FAILED: {}", res.status()));
+    .await;
+  let response = match response {
+    Ok(value) => value,
+    Err(_) => return Ok(skipped()),
+  };
+  if !response.status().is_success() {
+    return Ok(skipped());
   }
-  std::fs::write(current, caddyfile).map_err(|e| e.to_string())?;
   Ok(json!({ "ok": true, "warnings": warnings }))
 }
 

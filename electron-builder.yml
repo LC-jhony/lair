@@ -1,0 +1,17 @@
+appId: dev.flock.herd
+productName: Flock Herd RS
+files:
+  - dist/**/*
+  - dist-electron/**/*
+  - electron/**/*
+  - native/index.node
+extraResources:
+  - from: bin/caddy
+    to: caddy
+linux:
+  target: [AppImage, deb]
+mac:
+  target: [dmg]
+  category: public.app-category.developer-tools
+win:
+  target: [nsis]

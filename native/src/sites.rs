@@ -1,6 +1,8 @@
 use std::fs;
+use std::net::{TcpStream, ToSocketAddrs};
 use std::path::PathBuf;
 use std::process::Command;
+use std::time::Duration;
 
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
@@ -209,7 +211,7 @@ pub fn unpark_folder(root: &str) -> Result<(), String> {
   )
 }
 
-pub fn update(args: &str) -> Result<serde_json::Value, String> {
+pub async fn update(args: &str) -> Result<serde_json::Value, String> {
   let payload: serde_json::Value =
     serde_json::from_str(args).map_err(|e| format!("INVALID_PAYLOAD: {e}"))?;
   let id = payload["id"].as_str().ok_or("INVALID_PAYLOAD: id")?;
@@ -238,7 +240,36 @@ pub fn update(args: &str) -> Result<serde_json::Value, String> {
       )
       .map_err(|e| format!("DB_ERROR: {e}"))?;
   }
-  Ok(serde_json::json!({ "ok": true }))
+  // HTTPS no es solo una preferencia: regenera y aplica la configuración de Caddy.
+  let globals = db::get_state("caddy_global_options")?.unwrap_or_default();
+  let mut config = String::new();
+  if !globals.trim().is_empty() {
+    config.push_str(globals.trim());
+    config.push_str("\n\n");
+  }
+  for site in list()? {
+    let upstream = match site.kind.as_str() {
+      "php" => format!(
+        "unix//run/php/php{}-fpm.sock",
+        site.php_version.as_deref().unwrap_or("8.3")
+      ),
+      "node" => "127.0.0.1:3000".to_string(),
+      _ => String::new(),
+    };
+    config.push_str(&caddy::generate_caddyfile(
+      &site
+        .domains
+        .first()
+        .cloned()
+        .unwrap_or_else(|| format!("{}.test", site.name)),
+      &site.root,
+      &site.kind,
+      &upstream,
+      site.tls_internal,
+    ));
+  }
+  let warning = caddy::reload(&config).await.err();
+  Ok(serde_json::json!({ "ok": true, "warning": warning }))
 }
 
 pub fn open_in_editor(root: &str) -> Result<serde_json::Value, String> {
@@ -272,6 +303,25 @@ pub fn open_terminal(root: &str) -> Result<serde_json::Value, String> {
     Ok(_) => Ok(serde_json::json!({ "ok": true })),
     Err(error) => Err(format!("OPEN_FAILED: {error}")),
   }
+}
+
+pub fn environment(host: &str) -> Result<serde_json::Value, String> {
+  let address = (host, 0)
+    .to_socket_addrs()
+    .ok()
+    .and_then(|mut addresses| addresses.next())
+    .map(|socket| socket.ip().to_string())
+    .unwrap_or_default();
+  let port_open = |port: u16| {
+    let address = format!("127.0.0.1:{port}").parse().ok();
+    address
+      .and_then(|socket| TcpStream::connect_timeout(&socket, Duration::from_millis(500)).ok())
+      .is_some()
+  };
+  Ok(serde_json::json!({
+      "dns": { "host": host, "address": address, "ok": address == "127.0.0.1" },
+      "ports": { "http": port_open(80), "https": port_open(443) }
+  }))
 }
 
 pub fn list_worktrees(root: &str) -> Result<Vec<WorktreeInfo>, String> {

@@ -37,6 +37,7 @@ import {
   useParkFolder,
   useRemoveSite,
   useRemoveWorktree,
+  useSiteEnvironment,
   useSites,
   useUnparkFolder,
   useUpdateSite,
@@ -69,6 +70,7 @@ function SiteSettingsCard({
   const [branch, setBranch] = useState('')
 
   const domain = site.domains[0] ?? `${site.name}.test`
+  const url = `${site.tlsInternal ? 'https' : 'http'}://${domain}`
   const phpVersion = site.phpVersion ?? phpOptions[0]?.value ?? '8.5'
   const nodeVersion = site.nodeVersion ?? nodeOptions[0]?.value ?? '24'
 
@@ -87,7 +89,7 @@ function SiteSettingsCard({
           </div>
           <button
             type="button"
-            onClick={() => void ipc.openSite(domain)}
+            onClick={() => void ipc.openSite(url)}
             className="flex items-center gap-1.5 truncate text-xs text-primary hover:underline"
           >
             <Globe2 className="size-3 shrink-0" />
@@ -136,7 +138,7 @@ function SiteSettingsCard({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Button size="sm" onClick={() => void ipc.openSite(domain)}>
+          <Button size="sm" onClick={() => void ipc.openSite(url)}>
             <ExternalLink className="size-3.5" /> Abrir
           </Button>
           <Button size="sm" variant="outline" onClick={() => void ipc.openInEditor(site.root)}>
@@ -227,6 +229,9 @@ export function SitesPane() {
   const { data: versions = [] } = useVersions('php')
   const { data: nodeVersions = [] } = useVersions('node')
   const { data: caddy } = useCaddyStatus()
+  const { data: environment } = useSiteEnvironment(
+    sites[0]?.domains[0] ?? `${sites[0]?.name ?? 'acme'}.test`,
+  )
   const create = useCreateSite()
   const park = useParkFolder()
   const unpark = useUnparkFolder()
@@ -263,9 +268,16 @@ export function SitesPane() {
             <FolderPlus className="size-3.5" /> Añadir carpeta
           </Button>
         </div>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <StateDot state={caddy?.running ? 'running' : 'idle'} />
-          Caddy {caddy?.running ? `v${caddy.version ?? ''}` : 'detenido'}
+        <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+          <span className="flex items-center gap-2">
+            <StateDot state={caddy?.running ? 'running' : 'idle'} />
+            Caddy {caddy?.running ? `v${caddy.version ?? ''}` : 'detenido'}
+          </span>
+          <span>DNS .test: {environment?.dns.ok ? 'OK' : 'no resuelve'}</span>
+          <span>
+            Puertos 80/443:{' '}
+            {environment?.ports.http || environment?.ports.https ? 'activos' : 'cerrados'}
+          </span>
         </div>
       </div>
 

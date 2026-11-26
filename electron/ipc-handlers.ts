@@ -1,4 +1,6 @@
 import { execFileSync, spawn } from 'node:child_process'
+import { lookup } from 'node:dns/promises'
+import { connect } from 'node:net'
 import { createPublicKey, randomUUID, verify as verifySignature } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
@@ -227,6 +229,57 @@ const backend: BackendLike | null = (() => {
 
 const CADDY_ADMIN = 'http://localhost:2019'
 
+async function portOpen(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = connect({ host: '127.0.0.1', port })
+    socket.once('connect', () => {
+      socket.destroy()
+      resolve(true)
+    })
+    socket.once('error', () => resolve(false))
+    socket.setTimeout(700, () => {
+      socket.destroy()
+      resolve(false)
+    })
+  })
+}
+
+function caddyfileForSite(site: Record<string, unknown>): string {
+  const domain = String((site.domains as string[] | undefined)?.[0] ?? `${site.name}.test`)
+  const secure = site.tlsInternal === true
+  let config = `${secure ? domain : `http://${domain}`} {\n`
+  if (secure) config += '    tls internal\n'
+  config += `    root * ${String(site.root ?? '')}\n    encode gzip zstd\n`
+  config += '    @dotfiles path /.*\n    respond @dotfiles 404\n'
+  if (site.kind === 'php') {
+    config += `    php_fastcgi unix//run/php/php${String(site.phpVersion ?? '8.3')}-fpm.sock\n    file_server\n`
+  } else if (site.kind === 'node') {
+    config += '    reverse_proxy 127.0.0.1:3000 {\n        header_up X-Forwarded-Proto {scheme}\n    }\n'
+  } else {
+    config += '    try_files {path} {path}/ /index.html\n    file_server\n'
+  }
+  return `${config}}\n`
+}
+
+async function reloadCaddyConfig(state: LocalState): Promise<{ ok: true; skipped?: boolean; warnings?: unknown[] }> {
+  const globals = String(state.caddy.globalOptions ?? '')
+  const config = (globals.trim() ? `${globals.trim()}\n\n` : '') + state.sites.map(caddyfileForSite).join('\n')
+  const adapted = await caddyApi('/adapt', {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/caddyfile' },
+    body: config,
+  })
+  if (!adapted?.ok) return { ok: true, skipped: true }
+  const response = await caddyApi('/load', {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/caddyfile', 'Cache-Control': 'must-revalidate' },
+    body: config,
+  })
+  if (!response?.ok) throw new Error('RELOAD_FAILED')
+  const adaptedJson = (await adapted.json()) as { warnings?: unknown[] }
+  return { ok: true, warnings: adaptedJson.warnings ?? [] }
+}
+
 async function caddyApi(path: string, init?: RequestInit): Promise<Response | null> {
   try {
     return await fetch(`${CADDY_ADMIN}${path}`, { ...init, signal: AbortSignal.timeout(2000) })
@@ -339,7 +392,9 @@ async function localInvoke(cmd: string, args: Record<string, unknown>): Promise<
         if (key in args) site[key] = args[key]
       }
       writeState(state)
-      return site
+      // HTTPS no cambia solo la preferencia: regenera y aplica el Caddyfile.
+      const reload = await reloadCaddyConfig(state)
+      return { ...site, caddy: reload }
     }
     case 'list_parked':
       return scanParked(state)
@@ -450,25 +505,20 @@ async function localInvoke(cmd: string, args: Record<string, unknown>): Promise<
       const adapted = (await response.json()) as { warnings?: unknown[] }
       return { ok: true, warnings: adapted.warnings ?? [] }
     }
-    case 'caddy_reload': {
-      const config = String(args.config ?? '')
-      const adapted = await caddyApi('/adapt', {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/caddyfile' },
-        body: config,
-      })
-      if (!adapted?.ok) return { ok: true, skipped: true }
-      const response = await caddyApi('/load', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'text/caddyfile',
-          'Cache-Control': 'must-revalidate',
-        },
-        body: config,
-      })
-      if (!response?.ok) throw new Error('RELOAD_FAILED')
-      const adaptedJson = (await adapted.json()) as { warnings?: unknown[] }
-      return { ok: true, warnings: adaptedJson.warnings ?? [] }
+    case 'caddy_reload':
+      return reloadCaddyConfig(state)
+    case 'site_environment': {
+      const host = String(args.host ?? 'acme.test')
+      let address = ''
+      try {
+        address = (await lookup(host)).address
+      } catch {
+        // Sin resolución: se reporta como no disponible.
+      }
+      return {
+        dns: { host, address, ok: address === '127.0.0.1' },
+        ports: { http: await portOpen(80), https: await portOpen(443) },
+      }
     }
     case 'caddy_global_options':
       return { options: String(state.caddy.globalOptions ?? '') }

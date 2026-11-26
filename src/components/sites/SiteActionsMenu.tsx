@@ -28,7 +28,10 @@ export function SiteActionsMenu({ site }: SiteActionsMenuProps) {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         <DropdownMenuItem
-          onClick={() => void ipc.openSite(site.domains[0] ?? `${site.name}.test`)}
+          onClick={() => {
+            const domain = site.domains[0] ?? `${site.name}.test`
+            void ipc.openSite(`${site.tlsInternal ? 'https' : 'http'}://${domain}`)
+          }}
         >
           <ExternalLink className="size-4" />
           Abrir sitio

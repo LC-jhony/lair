@@ -10,6 +10,7 @@ import type {
   ParkedProject,
   WorktreeInfo,
   Site,
+  SiteEnvironment,
   TitleBarColors,
   TrustCaResult,
 } from './types'
@@ -166,6 +167,13 @@ function createBrowserBridge(): FlockBridge {
         case 'open_in_editor':
         case 'open_terminal':
           return delay({ ok: true }) as Promise<T>
+        case 'site_environment': {
+          const host = String(payload.host ?? 'acme.test')
+          return delay({
+            dns: { host, address: '', ok: false },
+            ports: { http: false, https: false },
+          }) as Promise<T>
+        }
         case 'list_worktrees':
           return delay([]) as Promise<T>
         case 'add_worktree':
@@ -329,6 +337,7 @@ export const ipc = {
   listSites: () => bridge.invoke<Site[]>('list_sites'),
   createSite: (payload: NewSiteInput) => bridge.invoke<Site>('create_site', payload),
   deleteSite: (id: string) => bridge.invoke<{ ok: true }>('delete_site', { id }),
+  siteEnvironment: (host: string) => bridge.invoke<SiteEnvironment>('site_environment', { host }),
   listParked: () => bridge.invoke<ParkedProject[]>('list_parked'),
   parkFolder: (root: string) => bridge.invoke<{ ok: true }>('park_folder', { root }),
   unparkFolder: (root: string) => bridge.invoke<{ ok: true }>('unpark_folder', { root }),
@@ -377,6 +386,7 @@ export const flock = {
     list: ipc.listSites,
     create: ipc.createSite,
     remove: ipc.deleteSite,
+    environment: ipc.siteEnvironment,
     parked: ipc.listParked,
     park: ipc.parkFolder,
     unpark: ipc.unparkFolder,

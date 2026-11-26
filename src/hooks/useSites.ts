@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ipc } from '@/lib/ipc'
+import { useTrustCa } from './useBinaries'
 import { useStatusBanner } from '@/components/layout'
 import { generateCaddyfile } from '@/lib/caddyfile'
 import type { NewSiteInput, Site } from '@/lib/types'
@@ -16,6 +17,14 @@ export function useSites() {
   return useQuery({
     queryKey: sitesQueryKey,
     queryFn: () => ipc.listSites(),
+  })
+}
+
+export function useSiteEnvironment(host?: string) {
+  return useQuery({
+    queryKey: ['site-environment', host ?? 'none'],
+    queryFn: () => ipc.siteEnvironment(host ?? 'acme.test'),
+    retry: false,
   })
 }
 
@@ -44,8 +53,37 @@ export function useRemoveSite() {
 
 export function useUpdateSite() {
   const client = useQueryClient()
+  const banner = useStatusBanner()
+  const reload = useReloadCaddy()
+  const trust = useTrustCa()
+
   return useMutation({
-    mutationFn: (payload: { id: string } & Partial<Site>) => ipc.updateSite(payload),
+    mutationFn: async (payload: { id: string } & Partial<Site>) => {
+      const before = client.getQueryData<Site[]>(sitesQueryKey) ?? []
+      const previous = before.find((site) => site.id === payload.id)
+      const result = await ipc.updateSite(payload)
+
+      if (payload.tlsInternal === true && previous?.tlsInternal === false) {
+        await trust.mutateAsync().catch(() => null)
+      }
+
+      const after = before.map((site) =>
+        site.id === payload.id ? { ...site, ...payload } : site,
+      )
+      try {
+        const result = await reload.mutateAsync(after)
+        if ((result as { skipped?: boolean })?.skipped) {
+          banner.report('HTTPS guardado, pero Caddy no recargó: admin :2019 no disponible.')
+        } else {
+          banner.report(null)
+        }
+      } catch (error) {
+        banner.report(
+          `HTTPS actualizado en la configuración, pero Caddy no recargó: ${(error as Error).message}`,
+        )
+      }
+      return result
+    },
     onSuccess: () => refreshSites(client),
   })
 }
@@ -100,10 +138,15 @@ export function useReloadCaddy() {
       return ipc.caddyReload(globals + sites.map((site) => generateCaddyfile(site)).join('\n'))
     },
     onSuccess: (result) => {
-      const warnings = (result as { warnings?: Array<{ message?: string }> })?.warnings ?? []
-      banner.report(
-        warnings.length ? warnings.map((item) => item.message ?? 'advertencia').join(' · ') : null,
-      )
+      const data = result as { warnings?: Array<{ message?: string }>; skipped?: boolean }
+      const warnings = data?.warnings ?? []
+      if (data?.skipped) {
+        banner.report('Caddy no recargó: admin :2019 no disponible.')
+      } else {
+        banner.report(
+          warnings.length ? warnings.map((item) => item.message ?? 'advertencia').join(' · ') : null,
+        )
+      }
       void client.invalidateQueries({ queryKey: ['caddy'] })
     },
   })

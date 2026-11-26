@@ -114,7 +114,7 @@ async fn dispatch(cmd: &str, args: &str) -> Result<Value, BackendError> {
       let root = payload["root"].as_str().unwrap_or_default();
       wrap(sites::unpark_folder(root), "DB_ERROR").map(|_| json!({ "ok": true }))
     }
-    "update_site" => wrap(sites::update(args), "DB_ERROR"),
+    "update_site" => wrap(sites::update(args).await, "DB_ERROR"),
     "open_in_editor" => {
       let root = payload["root"].as_str().unwrap_or_default();
       wrap(sites::open_in_editor(root), "OPEN_FAILED")
@@ -122,6 +122,10 @@ async fn dispatch(cmd: &str, args: &str) -> Result<Value, BackendError> {
     "open_terminal" => {
       let root = payload["root"].as_str().unwrap_or_default();
       wrap(sites::open_terminal(root), "OPEN_FAILED")
+    }
+    "site_environment" => {
+      let host = payload["host"].as_str().unwrap_or("acme.test");
+      wrap(sites::environment(host), "DB_ERROR")
     }
     "list_worktrees" => {
       let root = payload["root"].as_str().unwrap_or_default();

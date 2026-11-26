@@ -26,6 +26,11 @@ export interface NewSiteInput {
   tlsInternal: boolean
 }
 
+export interface SiteEnvironment {
+  dns: { host: string; address: string; ok: boolean }
+  ports: { http: boolean; https: boolean }
+}
+
 export interface ParkedProject {
   name: string
   root: string

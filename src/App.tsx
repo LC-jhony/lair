@@ -1,7 +1,7 @@
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AppShell } from '@/components/layout/AppShell'
 import { Dashboard } from '@/components/dashboard/Dashboard'
-import { SiteList } from '@/components/dashboard/SiteList'
+import { SitesPane } from '@/components/sites/SitesPane'
 import { BinaryPanel } from '@/components/dashboard/BinaryPanel'
 import { OnboardingWizard } from '@/components/onboarding/OnboardingWizard'
 import { PlaceholderPane } from '@/components/panes/PlaceholderPane'
@@ -20,7 +20,7 @@ export default function App() {
       <AppShell>
         <Routes>
           <Route path="/" element={<Dashboard />} />
-          <Route path="/sites" element={<SiteList />} />
+          <Route path="/sites" element={<SitesPane />} />
           <Route path="/services" element={<ServicesPane />} />
           <Route path="/binaries" element={<BinaryPanel />} />
           {RUNTIME_PANES.map((id) => (

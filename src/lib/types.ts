@@ -26,6 +26,19 @@ export interface NewSiteInput {
   tlsInternal: boolean
 }
 
+export interface ParkedProject {
+  name: string
+  root: string
+  domain: string
+  kind: SiteKind
+}
+
+export interface WorktreeInfo {
+  path: string
+  branch: string
+  name: string
+}
+
 export interface BinaryVersion {
   package: string
   version: string

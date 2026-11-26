@@ -1,10 +1,12 @@
+import { execFileSync, spawn } from 'node:child_process'
 import { createPublicKey, randomUUID, verify as verifySignature } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { basename, dirname, join } from 'node:path'
 import { app, ipcMain, shell } from 'electron'
 
 interface LocalState {
   sites: Array<Record<string, unknown>>
+  parkedRoots: string[]
   binaries: Array<Record<string, unknown>>
   caddy: Record<string, unknown>
   onboarding: Record<string, unknown>
@@ -180,6 +182,7 @@ const statePath = join(dataDir, 'flock-state.json')
 function emptyState(): LocalState {
   return {
     sites: [],
+    parkedRoots: [join(app.getPath('home'), 'Lair')],
     binaries: [
       { package: 'php', version: '8.4', installed: false, isDefault: false },
       { package: 'node', version: '22.11.0', installed: false, isDefault: false },
@@ -198,7 +201,8 @@ function emptyState(): LocalState {
 function readState(): LocalState {
   if (!existsSync(statePath)) return emptyState()
   try {
-    return JSON.parse(readFileSync(statePath, 'utf8')) as LocalState
+    const parsed = JSON.parse(readFileSync(statePath, 'utf8')) as Partial<LocalState>
+    return { ...emptyState(), ...parsed } as LocalState
   } catch {
     return emptyState()
   }
@@ -221,6 +225,84 @@ const backend: BackendLike | null = (() => {
   }
 })()
 
+interface ParkedProject {
+  name: string
+  root: string
+  domain: string
+  kind: 'php' | 'node' | 'static'
+}
+
+interface WorktreeInfo {
+  path: string
+  branch: string
+  name: string
+}
+
+function parkedRoots(state: LocalState): string[] {
+  return state.parkedRoots?.length
+    ? state.parkedRoots
+    : [join(app.getPath('home'), 'Lair')]
+}
+
+function scanParked(state: LocalState): ParkedProject[] {
+  const linked = new Set(state.sites.map((site) => String(site.root)))
+  const found: ParkedProject[] = []
+  for (const root of parkedRoots(state)) {
+    if (!existsSync(root)) continue
+    for (const entry of readdirSync(root, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue
+      const path = join(root, entry.name)
+      if (linked.has(path)) continue
+      const isProject =
+        existsSync(join(path, 'composer.json')) ||
+        existsSync(join(path, 'package.json')) ||
+        existsSync(join(path, 'public', 'index.php')) ||
+        existsSync(join(path, '.git'))
+      if (!isProject) continue
+      const name = entry.name.toLowerCase().replace(/[^a-z0-9-]+/g, '-')
+      const kind = existsSync(join(path, 'package.json')) ? 'node' : 'php'
+      found.push({ name: entry.name, root: path, domain: `${name}.test`, kind })
+    }
+  }
+  return found
+}
+
+function git(root: string, args: string[]): string {
+  return execFileSync('git', ['-C', root, ...args], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+}
+
+function listWorktrees(root: string): WorktreeInfo[] {
+  try {
+    return git(root, ['worktree', 'list', '--porcelain'])
+      .split('\n\n')
+      .map((block) => {
+        const path = block.match(/^worktree (.+)$/m)?.[1] ?? ''
+        const branch = block.match(/^branch refs\/heads\/(.+)$/m)?.[1] ?? ''
+        return { path, branch, name: path ? basename(path) : '' }
+      })
+      .filter((item) => item.path)
+  } catch {
+    return []
+  }
+}
+
+function openTerminal(root: string): void {
+  try {
+    if (process.platform === 'win32') {
+      spawn('cmd', ['/c', 'start', 'cmd', '/K', `cd /d "${root}"`], { detached: true })
+    } else if (process.platform === 'darwin') {
+      spawn('open', ['-a', 'Terminal', root], { detached: true })
+    } else {
+      spawn('gnome-terminal', ['--working-directory', root], { detached: true })
+    }
+  } catch {
+    void shell.openPath(root)
+  }
+}
+
 function localInvoke(cmd: string, args: Record<string, unknown>): unknown {
   const state = readState()
 
@@ -236,6 +318,47 @@ function localInvoke(cmd: string, args: Record<string, unknown>): unknown {
     case 'delete_site':
       state.sites = state.sites.filter((site) => site.id !== args.id)
       writeState(state)
+      return { ok: true }
+    case 'update_site': {
+      const site = state.sites.find((item) => item.id === args.id)
+      if (!site) throw new Error('Sitio no encontrado')
+      for (const key of ['tlsInternal', 'phpVersion', 'nodeVersion', 'domains', 'root']) {
+        if (key in args) site[key] = args[key]
+      }
+      writeState(state)
+      return site
+    }
+    case 'list_parked':
+      return scanParked(state)
+    case 'park_folder': {
+      const root = String(args.root)
+      if (!parkedRoots(state).includes(root)) state.parkedRoots.push(root)
+      writeState(state)
+      return { ok: true }
+    }
+    case 'unpark_folder':
+      state.parkedRoots = parkedRoots(state).filter((root) => root !== args.root)
+      writeState(state)
+      return { ok: true }
+    case 'open_in_editor':
+      void shell.openExternal(`vscode://file/${String(args.root)}`)
+      return { ok: true }
+    case 'open_terminal':
+      openTerminal(String(args.root))
+      return { ok: true }
+    case 'list_worktrees':
+      return listWorktrees(String(args.root))
+    case 'add_worktree': {
+      const root = String(args.root)
+      const branch = String(args.branch)
+        .toLowerCase()
+        .replace(/[^a-z0-9-]+/g, '-')
+      const path = String(args.path ?? join(dirname(root), `${basename(root)}-${branch}`))
+      git(root, ['worktree', 'add', '-b', branch, path])
+      return { path, branch }
+    }
+    case 'remove_worktree':
+      git(String(args.root), ['worktree', 'remove', String(args.path)])
       return { ok: true }
     case 'list_binaries':
       return state.binaries

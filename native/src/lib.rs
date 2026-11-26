@@ -105,6 +105,30 @@ async fn dispatch(cmd: &str, args: &str) -> Result<Value, BackendError> {
 
   match cmd {
     "list_sites" => wrap(sites::list(), "DB_ERROR"),
+    "list_parked" => wrap(sites::list_parked(), "DB_ERROR"),
+    "park_folder" => {
+      let root = payload["root"].as_str().unwrap_or_default();
+      wrap(sites::park_folder(root), "DB_ERROR").map(|_| json!({ "ok": true }))
+    }
+    "unpark_folder" => {
+      let root = payload["root"].as_str().unwrap_or_default();
+      wrap(sites::unpark_folder(root), "DB_ERROR").map(|_| json!({ "ok": true }))
+    }
+    "update_site" => wrap(sites::update(args), "DB_ERROR"),
+    "open_in_editor" => {
+      let root = payload["root"].as_str().unwrap_or_default();
+      wrap(sites::open_in_editor(root), "OPEN_FAILED")
+    }
+    "open_terminal" => {
+      let root = payload["root"].as_str().unwrap_or_default();
+      wrap(sites::open_terminal(root), "OPEN_FAILED")
+    }
+    "list_worktrees" => {
+      let root = payload["root"].as_str().unwrap_or_default();
+      wrap(sites::list_worktrees(root), "GIT_ERROR")
+    }
+    "add_worktree" => wrap(sites::add_worktree(args), "GIT_ERROR"),
+    "remove_worktree" => wrap(sites::remove_worktree(args), "GIT_ERROR"),
     "create_site" => {
       let result = sites::create(args).await.map_err(|message| BackendError {
         code: known_code("DB_ERROR", &message),

@@ -4,6 +4,12 @@ import { generateCaddyfile } from '@/lib/caddyfile'
 import type { NewSiteInput, Site } from '@/lib/types'
 
 export const sitesQueryKey = ['sites'] as const
+export const parkedQueryKey = ['parked'] as const
+
+function refreshSites(client: ReturnType<typeof useQueryClient>) {
+  void client.invalidateQueries({ queryKey: sitesQueryKey })
+  void client.invalidateQueries({ queryKey: parkedQueryKey })
+}
 
 export function useSites() {
   return useQuery({
@@ -12,11 +18,18 @@ export function useSites() {
   })
 }
 
+export function useParked() {
+  return useQuery({
+    queryKey: parkedQueryKey,
+    queryFn: () => ipc.listParked(),
+  })
+}
+
 export function useCreateSite() {
   const client = useQueryClient()
   return useMutation({
     mutationFn: (input: NewSiteInput) => ipc.createSite(input),
-    onSuccess: () => client.invalidateQueries({ queryKey: sitesQueryKey }),
+    onSuccess: () => refreshSites(client),
   })
 }
 
@@ -24,7 +37,55 @@ export function useRemoveSite() {
   const client = useQueryClient()
   return useMutation({
     mutationFn: (id: string) => ipc.deleteSite(id),
-    onSuccess: () => client.invalidateQueries({ queryKey: sitesQueryKey }),
+    onSuccess: () => refreshSites(client),
+  })
+}
+
+export function useUpdateSite() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: { id: string } & Partial<Site>) => ipc.updateSite(payload),
+    onSuccess: () => refreshSites(client),
+  })
+}
+
+export function useParkFolder() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (root: string) => ipc.parkFolder(root),
+    onSuccess: () => refreshSites(client),
+  })
+}
+
+export function useUnparkFolder() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (root: string) => ipc.unparkFolder(root),
+    onSuccess: () => refreshSites(client),
+  })
+}
+
+export function useWorktrees(root: string | undefined) {
+  return useQuery({
+    queryKey: ['worktrees', root],
+    queryFn: () => ipc.listWorktrees(root ?? ''),
+    enabled: Boolean(root),
+  })
+}
+
+export function useAddWorktree() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: { root: string; branch: string }) => ipc.addWorktree(payload),
+    onSuccess: () => client.invalidateQueries({ queryKey: ['worktrees'] }),
+  })
+}
+
+export function useRemoveWorktree() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: { root: string; path: string }) => ipc.removeWorktree(payload),
+    onSuccess: () => client.invalidateQueries({ queryKey: ['worktrees'] }),
   })
 }
 

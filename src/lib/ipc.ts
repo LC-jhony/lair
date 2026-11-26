@@ -6,6 +6,8 @@ import type {
   NewSiteInput,
   OnboardingState,
   PackageVersion,
+  ParkedProject,
+  WorktreeInfo,
   Site,
   TitleBarColors,
   TrustCaResult,
@@ -13,12 +15,14 @@ import type {
 
 interface DemoState {
   sites: Site[]
+  parkedRoots?: string[]
   binaries: BinaryVersion[]
   caddy: CaddyStatus
   onboarding: OnboardingState
 }
 
 const initialState: DemoState = {
+  parkedRoots: ['~/Lair'],
   sites: [
     {
       id: 'demo-site',
@@ -119,6 +123,53 @@ function createBrowserBridge(): FlockBridge {
         case 'delete_site':
           state.sites = state.sites.filter((site) => site.id !== payload.id)
           write(state)
+          return delay({ ok: true }) as Promise<T>
+        case 'update_site': {
+          const site = state.sites.find((item) => item.id === payload.id)
+          if (!site) throw new Error('Sitio no encontrado')
+          for (const key of ['tlsInternal', 'phpVersion', 'nodeVersion', 'domains', 'root']) {
+            if (key in payload) (site as unknown as Record<string, unknown>)[key] = payload[key]
+          }
+          write(state)
+          return delay(site) as Promise<T>
+        }
+        case 'list_parked': {
+          const roots = state.parkedRoots ?? initialState.parkedRoots ?? []
+          const linked = new Set(state.sites.map((site) => site.root))
+          const found: ParkedProject[] = []
+          for (const root of roots) {
+            for (const name of ['acme', 'blog']) {
+              const candidate = `${root}/${name}`
+              if (linked.has(candidate)) continue
+              found.push({
+                name,
+                root: candidate,
+                domain: `${name}.test`,
+                kind: name === 'blog' ? 'node' : 'php',
+              })
+            }
+          }
+          return delay(found) as Promise<T>
+        }
+        case 'park_folder':
+          state.parkedRoots = state.parkedRoots ?? []
+          if (!state.parkedRoots.includes(String(payload.root))) {
+            state.parkedRoots.push(String(payload.root))
+          }
+          write(state)
+          return delay({ ok: true }) as Promise<T>
+        case 'unpark_folder':
+          state.parkedRoots = (state.parkedRoots ?? []).filter((root) => root !== payload.root)
+          write(state)
+          return delay({ ok: true }) as Promise<T>
+        case 'open_in_editor':
+        case 'open_terminal':
+          return delay({ ok: true }) as Promise<T>
+        case 'list_worktrees':
+          return delay([]) as Promise<T>
+        case 'add_worktree':
+          return delay({ path: payload.path ?? '', branch: payload.branch }) as Promise<T>
+        case 'remove_worktree':
           return delay({ ok: true }) as Promise<T>
         case 'list_binaries':
           return delay(state.binaries) as Promise<T>
@@ -265,6 +316,18 @@ export const ipc = {
   listSites: () => bridge.invoke<Site[]>('list_sites'),
   createSite: (payload: NewSiteInput) => bridge.invoke<Site>('create_site', payload),
   deleteSite: (id: string) => bridge.invoke<{ ok: true }>('delete_site', { id }),
+  listParked: () => bridge.invoke<ParkedProject[]>('list_parked'),
+  parkFolder: (root: string) => bridge.invoke<{ ok: true }>('park_folder', { root }),
+  unparkFolder: (root: string) => bridge.invoke<{ ok: true }>('unpark_folder', { root }),
+  updateSite: (payload: Record<string, unknown>) =>
+    bridge.invoke<Site>('update_site', payload),
+  openInEditor: (root: string) => bridge.invoke<{ ok: true }>('open_in_editor', { root }),
+  openTerminal: (root: string) => bridge.invoke<{ ok: true }>('open_terminal', { root }),
+  listWorktrees: (root: string) => bridge.invoke<WorktreeInfo[]>('list_worktrees', { root }),
+  addWorktree: (payload: { root: string; branch: string; path?: string }) =>
+    bridge.invoke<{ path: string; branch: string }>('add_worktree', payload),
+  removeWorktree: (payload: { root: string; path: string }) =>
+    bridge.invoke<{ ok: true }>('remove_worktree', payload),
   listBinaries: () => bridge.invoke<BinaryVersion[]>('list_binaries'),
   installBinary: (payload: { package: string; version: string; platform: string }) =>
     bridge.invoke<{ path: string; sha256: string }>('install_binary', payload),
@@ -296,6 +359,15 @@ export const flock = {
     list: ipc.listSites,
     create: ipc.createSite,
     remove: ipc.deleteSite,
+    parked: ipc.listParked,
+    park: ipc.parkFolder,
+    unpark: ipc.unparkFolder,
+    update: ipc.updateSite,
+    openInEditor: ipc.openInEditor,
+    openTerminal: ipc.openTerminal,
+    worktrees: ipc.listWorktrees,
+    addWorktree: ipc.addWorktree,
+    removeWorktree: ipc.removeWorktree,
   },
   binaries: {
     list: ipc.listBinaries,

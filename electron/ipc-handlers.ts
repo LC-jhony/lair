@@ -260,7 +260,10 @@ function scanParked(state: LocalState): ParkedProject[] {
         existsSync(join(path, '.git'))
       if (!isProject) continue
       const name = entry.name.toLowerCase().replace(/[^a-z0-9-]+/g, '-')
-      const kind = existsSync(join(path, 'package.json')) ? 'node' : 'php'
+      // Un proyecto Laravel tiene package.json para Vite, pero se sirve con PHP.
+      const isPhp =
+        existsSync(join(path, 'composer.json')) || existsSync(join(path, 'public', 'index.php'))
+      const kind = isPhp ? 'php' : 'node'
       found.push({ name: entry.name, root: path, domain: `${name}.test`, kind })
     }
   }
@@ -444,7 +447,8 @@ function localInvoke(cmd: string, args: Record<string, unknown>): unknown {
       writeState(state)
       return state.onboarding
     case 'open_site': {
-      const url = new URL(String(args.url))
+      const raw = String(args.url)
+      const url = new URL(/^https?:\/\//i.test(raw) ? raw : `http://${raw}`)
       void shell.openExternal(url.toString())
       return { ok: true }
     }

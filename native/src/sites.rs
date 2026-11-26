@@ -173,11 +173,9 @@ pub fn list_parked() -> Result<Vec<ParkedProject>, String> {
           .to_lowercase()
           .replace(|c: char| !c.is_ascii_alphanumeric(), "-")
       );
-      let kind = if path.join("package.json").exists() {
-        "node"
-      } else {
-        "php"
-      };
+      let is_php =
+        path.join("composer.json").exists() || path.join("public").join("index.php").exists();
+      let kind = if is_php { "php" } else { "node" };
       found.push(ParkedProject {
         name,
         root: path.to_string_lossy().to_string(),

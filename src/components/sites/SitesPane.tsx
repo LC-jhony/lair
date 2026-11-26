@@ -69,10 +69,8 @@ function SiteSettingsCard({
   const [branch, setBranch] = useState('')
 
   const domain = site.domains[0] ?? `${site.name}.test`
-  const options = site.kind === 'php' ? phpOptions : site.kind === 'node' ? nodeOptions : []
-  const versionField = site.kind === 'php' ? 'phpVersion' : 'nodeVersion'
-  const currentVersion =
-    (site.kind === 'php' ? site.phpVersion : site.nodeVersion) ?? options[0]?.value ?? ''
+  const phpVersion = site.phpVersion ?? phpOptions[0]?.value ?? '8.5'
+  const nodeVersion = site.nodeVersion ?? nodeOptions[0]?.value ?? '24'
 
   return (
     <Card>
@@ -117,19 +115,24 @@ function SiteSettingsCard({
               label={`HTTPS para ${site.name}`}
             />
           </div>
-          {options.length > 0 ? (
-            <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
-              <span className="text-sm">
-                Versión de {site.kind === 'php' ? 'PHP' : 'Node'}
-              </span>
-              <Select
-                label={`${site.kind === 'php' ? 'PHP' : 'Node'} de ${site.name}`}
-                value={currentVersion}
-                onChange={(value) => update.mutate({ id: site.id, [versionField]: value })}
-                options={options}
-              />
-            </div>
-          ) : null}
+          <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
+            <span className="text-sm">Versión de PHP</span>
+            <Select
+              label={`PHP de ${site.name}`}
+              value={phpVersion}
+              onChange={(value) => update.mutate({ id: site.id, phpVersion: value })}
+              options={phpOptions}
+            />
+          </div>
+          <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 sm:col-span-2">
+            <span className="text-sm">Versión de Node.js</span>
+            <Select
+              label={`Node de ${site.name}`}
+              value={nodeVersion}
+              onChange={(value) => update.mutate({ id: site.id, nodeVersion: value })}
+              options={nodeOptions}
+            />
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">

@@ -163,15 +163,21 @@ async fn dispatch(cmd: &str, args: &str) -> Result<Value, BackendError> {
     }
     "caddy_validate" => {
       let config = payload["config"].as_str().unwrap_or_default();
-      wrap(caddy::validate(config).await, "VALIDATE_FAILED").map(|_| json!({ "ok": true }))
+      wrap(caddy::validate(config).await, "VALIDATE_FAILED")
     }
     "caddy_reload" => {
       let config = payload["config"].as_str().unwrap_or_default();
-      wrap(caddy::reload(config).await, "RELOAD_FAILED").map(|_| json!({ "ok": true }))
+      wrap(caddy::reload(config).await, "RELOAD_FAILED")
     }
     "caddy_trust" => wrap(caddy::trust(), "TRUST_FAILED"),
     "caddy_untrust" => wrap(caddy::untrust(), "TRUST_FAILED"),
-    "caddy_status" => wrap(caddy::status(), "DB_ERROR"),
+    "caddy_status" => wrap(caddy::status().await, "DB_ERROR"),
+    "caddy_ca_status" => wrap(caddy::ca_status().await, "CA_UNAVAILABLE"),
+    "caddy_global_options" => wrap(caddy::global_options(), "DB_ERROR"),
+    "set_caddy_global_options" => {
+      let options = payload["options"].as_str().unwrap_or_default();
+      wrap(caddy::set_global_options(options), "DB_ERROR")
+    }
     "open_site" => {
       let url = payload["url"].as_str().unwrap_or_default();
       let opener = if cfg!(target_os = "windows") {

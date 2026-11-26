@@ -1,5 +1,6 @@
 use std::process::Command;
 
+use reqwest::Client;
 use serde_json::{json, Value};
 
 use crate::{db, platform};
@@ -23,24 +24,24 @@ pub async fn adapt(caddyfile: &str) -> Result<Value, String> {
   res.json().await.map_err(|e| format!("ADAPT_FAILED: {e}"))
 }
 
-pub async fn validate(caddyfile: &str) -> Result<(), String> {
-  adapt(caddyfile).await?;
-  let res = reqwest::Client::new()
-    .post(format!("{ADMIN}/validate"))
-    .header("Content-Type", "text/caddyfile")
-    .body(caddyfile.to_string())
-    .send()
-    .await
-    .map_err(|e| e.to_string())?;
-  if !res.status().is_success() {
-    return Err(format!("VALIDATE_FAILED: {}", res.status()));
-  }
-  Ok(())
+/// La API de Caddy no tiene `/validate`: `/adapt` convierte y valida sin aplicar.
+/// Devuelve los warnings que emite el adaptador para mostrarlos en la UI.
+pub async fn validate(caddyfile: &str) -> Result<Value, String> {
+  let adapted = adapt(caddyfile).await?;
+  let warnings = adapted
+    .get("warnings")
+    .cloned()
+    .unwrap_or_else(|| json!([]));
+  Ok(json!({ "ok": true, "warnings": warnings }))
 }
 
-pub async fn reload(caddyfile: &str) -> Result<(), String> {
-  // 1. Adaptar y validar antes de aplicar
-  adapt(caddyfile).await?;
+pub async fn reload(caddyfile: &str) -> Result<Value, String> {
+  // 1. Adaptar y validar antes de aplicar; conservamos los warnings del adaptador.
+  let adapted = adapt(caddyfile).await?;
+  let warnings = adapted
+    .get("warnings")
+    .cloned()
+    .unwrap_or_else(|| json!([]));
 
   // 2. Guardar el Caddyfile anterior para poder revertir
   let config_dir = platform::config_dir()?;
@@ -53,9 +54,11 @@ pub async fn reload(caddyfile: &str) -> Result<(), String> {
   }
 
   // 3. Aplicar atómicamente
-  let res = reqwest::Client::new()
+  let res = Client::new()
     .post(format!("{ADMIN}/load"))
     .header("Content-Type", "text/caddyfile")
+    // Fuerza el reload aunque la config sea idéntica a la activa.
+    .header("Cache-Control", "must-revalidate")
     .body(caddyfile.to_string())
     .send()
     .await
@@ -64,7 +67,7 @@ pub async fn reload(caddyfile: &str) -> Result<(), String> {
     return Err(format!("RELOAD_FAILED: {}", res.status()));
   }
   std::fs::write(current, caddyfile).map_err(|e| e.to_string())?;
-  Ok(())
+  Ok(json!({ "ok": true, "warnings": warnings }))
 }
 
 pub fn generate_caddyfile(
@@ -74,7 +77,13 @@ pub fn generate_caddyfile(
   upstream: &str,
   tls_internal: bool,
 ) -> String {
-  let mut s = format!("{domain} {{\n");
+  // Prefijar `http://` evita que Caddy active HTTPS y redirija automáticamente.
+  let address = if tls_internal {
+    domain.to_string()
+  } else {
+    format!("http://{domain}")
+  };
+  let mut s = format!("{address} {{\n");
   if tls_internal {
     s.push_str("    tls internal\n");
   }
@@ -92,7 +101,9 @@ pub fn generate_caddyfile(
   s
 }
 
-pub fn status() -> Result<Value, String> {
+/// `running` se comprueba contra el endpoint de administración, no contra `caddy version`
+/// (que solo indica que el binario existe).
+pub async fn status() -> Result<Value, String> {
   let version = Command::new("caddy")
     .arg("version")
     .output()
@@ -104,12 +115,52 @@ pub fn status() -> Result<Value, String> {
     || db::get_state("caddy_installed")?
       .map(|value| value == "true")
       .unwrap_or(false);
+  let running = Client::new()
+    .get(format!("{ADMIN}/config/"))
+    .timeout(std::time::Duration::from_millis(1500))
+    .send()
+    .await
+    .map(|response| response.status().is_success())
+    .unwrap_or(false);
   Ok(json!({
       "installed": installed,
-      "running": version.is_some(),
+      "running": running,
       "version": version,
       "configPath": platform::config_dir()?.join("Caddyfile").to_string_lossy(),
   }))
+}
+
+/// Estado de la CA local. El endpoint la crea si no existe aún.
+pub async fn ca_status() -> Result<Value, String> {
+  let response = Client::new()
+    .get(format!("{ADMIN}/pki/ca/local"))
+    .timeout(std::time::Duration::from_millis(2500))
+    .send()
+    .await
+    .map_err(|error| format!("CA_UNAVAILABLE: {error}"))?;
+  if !response.status().is_success() {
+    return Err(format!("CA_UNAVAILABLE: {}", response.status()));
+  }
+  let info: Value = response
+    .json()
+    .await
+    .map_err(|error| format!("CA_UNAVAILABLE: {error}"))?;
+  Ok(json!({
+      "available": true,
+      "name": info.get("name").cloned().unwrap_or_else(|| json!("Caddy Local Authority")),
+      "rootCommonName": info.get("root_common_name").cloned().unwrap_or_else(|| json!("")),
+  }))
+}
+
+pub fn global_options() -> Result<Value, String> {
+  Ok(json!({
+    "options": db::get_state("caddy_global_options")?.unwrap_or_default()
+  }))
+}
+
+pub fn set_global_options(options: &str) -> Result<Value, String> {
+  db::set_state("caddy_global_options", options)?;
+  Ok(json!({ "ok": true }))
 }
 
 pub fn trust() -> Result<Value, String> {

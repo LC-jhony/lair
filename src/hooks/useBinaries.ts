@@ -60,6 +60,39 @@ export function useUninstallVersion() {
   })
 }
 
+export function useCaStatus() {
+  return useQuery({
+    queryKey: ['caddy', 'ca'],
+    queryFn: () => flock.caddy.caStatus(),
+  })
+}
+
+export function useGlobalOptions() {
+  return useQuery({
+    queryKey: ['caddy', 'global-options'],
+    queryFn: () => flock.caddy.globalOptions(),
+  })
+}
+
+export function useSetGlobalOptions() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (options: string) => flock.caddy.setGlobalOptions(options),
+    onSuccess: () => client.invalidateQueries({ queryKey: ['caddy', 'global-options'] }),
+  })
+}
+
+export function useTrustCa() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: () => flock.caddy.trustCa(),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['caddy', 'ca'] })
+      void client.invalidateQueries({ queryKey: ['onboarding'] })
+    },
+  })
+}
+
 export function useInstallComposer() {
   const client = useQueryClient()
   return useMutation({

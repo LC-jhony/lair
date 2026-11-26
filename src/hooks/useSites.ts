@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ipc } from '@/lib/ipc'
+import { useStatusBanner } from '@/components/layout'
 import { generateCaddyfile } from '@/lib/caddyfile'
 import type { NewSiteInput, Site } from '@/lib/types'
 
@@ -91,9 +92,19 @@ export function useRemoveWorktree() {
 
 export function useReloadCaddy() {
   const client = useQueryClient()
+  const banner = useStatusBanner()
   return useMutation({
-    mutationFn: (sites: Site[]) =>
-      ipc.caddyReload(sites.map((site) => generateCaddyfile(site)).join('\n')),
-    onSuccess: () => client.invalidateQueries({ queryKey: ['caddy'] }),
+    mutationFn: async (sites: Site[]) => {
+      const { options } = await ipc.caddyGlobalOptions()
+      const globals = options?.trim() ? `${options.trim()}\n\n` : ''
+      return ipc.caddyReload(globals + sites.map((site) => generateCaddyfile(site)).join('\n'))
+    },
+    onSuccess: (result) => {
+      const warnings = (result as { warnings?: Array<{ message?: string }> })?.warnings ?? []
+      banner.report(
+        warnings.length ? warnings.map((item) => item.message ?? 'advertencia').join(' · ') : null,
+      )
+      void client.invalidateQueries({ queryKey: ['caddy'] })
+    },
   })
 }

@@ -1,5 +1,6 @@
 import type {
   BinaryVersion,
+  CaStatus,
   CaddyStatus,
   FlockBridge,
   ManifestInfo,
@@ -275,6 +276,18 @@ function createBrowserBridge(): FlockBridge {
           return delay({ ok: true }) as Promise<T>
         case 'caddy_status':
           return delay(state.caddy) as Promise<T>
+        case 'caddy_global_options':
+          return delay({ options: String(state.caddy.globalOptions ?? '') }) as Promise<T>
+        case 'set_caddy_global_options':
+          state.caddy.globalOptions = String(payload.options ?? '')
+          write(state)
+          return delay({ ok: true }) as Promise<T>
+        case 'caddy_ca_status':
+          return delay({
+            available: state.onboarding.caTrusted === true,
+            name: 'Caddy Local Authority',
+            rootCommonName: '',
+          }) as Promise<T>
         case 'get_onboarding':
           return delay(state.onboarding) as Promise<T>
         case 'complete_onboarding':
@@ -348,6 +361,11 @@ export const ipc = {
   tailLogs: (siteId: string) => bridge.invoke<{ lines: string[] }>('tail_logs', { siteId }),
   // UI extensions (not in the README command table):
   caddyStatus: () => bridge.invoke<CaddyStatus>('caddy_status'),
+  caddyCaStatus: () => bridge.invoke<CaStatus>('caddy_ca_status'),
+  caddyGlobalOptions: () =>
+    bridge.invoke<{ options: string }>('caddy_global_options'),
+  setCaddyGlobalOptions: (options: string) =>
+    bridge.invoke<{ ok: true }>('set_caddy_global_options', { options }),
   getOnboarding: () => bridge.invoke<OnboardingState>('get_onboarding'),
   completeOnboarding: () => bridge.invoke<OnboardingState>('complete_onboarding'),
   resetOnboarding: () => bridge.invoke<OnboardingState>('reset_onboarding'),
@@ -391,6 +409,9 @@ export const flock = {
   },
   caddy: {
     status: ipc.caddyStatus,
+    caStatus: ipc.caddyCaStatus,
+    globalOptions: ipc.caddyGlobalOptions,
+    setGlobalOptions: ipc.setCaddyGlobalOptions,
     install: async () => {
       await ipc.caddyTrust()
       return ipc.caddyStatus()

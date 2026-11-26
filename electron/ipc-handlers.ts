@@ -225,6 +225,16 @@ const backend: BackendLike | null = (() => {
   }
 })()
 
+const CADDY_ADMIN = 'http://localhost:2019'
+
+async function caddyApi(path: string, init?: RequestInit): Promise<Response | null> {
+  try {
+    return await fetch(`${CADDY_ADMIN}${path}`, { ...init, signal: AbortSignal.timeout(2000) })
+  } catch {
+    return null
+  }
+}
+
 interface ParkedProject {
   name: string
   root: string
@@ -306,7 +316,7 @@ function openTerminal(root: string): void {
   }
 }
 
-function localInvoke(cmd: string, args: Record<string, unknown>): unknown {
+async function localInvoke(cmd: string, args: Record<string, unknown>): Promise<unknown> {
   const state = readState()
 
   switch (cmd) {
@@ -420,11 +430,62 @@ function localInvoke(cmd: string, args: Record<string, unknown>): unknown {
         generated: new Date().toISOString(),
         packages: {},
       }
-    case 'caddy_adapt':
-      return {}
-    case 'caddy_validate':
-    case 'caddy_reload':
+    case 'caddy_adapt': {
+      const response = await caddyApi('/adapt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/caddyfile' },
+        body: String(args.config ?? ''),
+      })
+      return response?.ok ? response.json() : {}
+    }
+    case 'caddy_validate': {
+      const response = await caddyApi('/adapt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/caddyfile' },
+        body: String(args.config ?? ''),
+      })
+      if (!response?.ok) {
+        return { ok: true, warnings: [], skipped: true }
+      }
+      const adapted = (await response.json()) as { warnings?: unknown[] }
+      return { ok: true, warnings: adapted.warnings ?? [] }
+    }
+    case 'caddy_reload': {
+      const config = String(args.config ?? '')
+      const adapted = await caddyApi('/adapt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/caddyfile' },
+        body: config,
+      })
+      if (!adapted?.ok) return { ok: true, skipped: true }
+      const response = await caddyApi('/load', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/caddyfile',
+          'Cache-Control': 'must-revalidate',
+        },
+        body: config,
+      })
+      if (!response?.ok) throw new Error('RELOAD_FAILED')
+      const adaptedJson = (await adapted.json()) as { warnings?: unknown[] }
+      return { ok: true, warnings: adaptedJson.warnings ?? [] }
+    }
+    case 'caddy_global_options':
+      return { options: String(state.caddy.globalOptions ?? '') }
+    case 'set_caddy_global_options':
+      state.caddy = { ...state.caddy, globalOptions: String(args.options ?? '') }
+      writeState(state)
       return { ok: true }
+    case 'caddy_ca_status': {
+      const response = await caddyApi('/pki/ca/local')
+      if (!response?.ok) return { available: false }
+      const info = (await response.json()) as Record<string, unknown>
+      return {
+        available: true,
+        name: info.name ?? 'Caddy Local Authority',
+        rootCommonName: info.root_common_name ?? '',
+      }
+    }
     case 'caddy_trust':
       state.onboarding.caTrusted = true
       state.caddy = { ...state.caddy, installed: true, running: true, version: '2.9.0' }
@@ -434,8 +495,21 @@ function localInvoke(cmd: string, args: Record<string, unknown>): unknown {
       state.onboarding.caTrusted = false
       writeState(state)
       return { ok: true }
-    case 'caddy_status':
-      return state.caddy
+    case 'caddy_status': {
+      const response = await caddyApi('/config/')
+      let version: string | null
+      try {
+        const output = execFileSync('caddy', ['version'], { encoding: 'utf8' })
+        version = output.split(/\s+/)[1] ?? null
+      } catch {
+        version = state.caddy.version as string | null
+      }
+      return {
+        ...state.caddy,
+        running: Boolean(response?.ok),
+        version,
+      }
+    }
     case 'get_onboarding':
       return state.onboarding
     case 'complete_onboarding':

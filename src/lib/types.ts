@@ -73,6 +73,13 @@ export interface CaddyStatus {
   running: boolean
   version: string | null
   configPath: string | null
+  globalOptions?: string
+}
+
+export interface CaStatus {
+  available: boolean
+  name: string
+  rootCommonName: string
 }
 
 export interface TrustCaResult {

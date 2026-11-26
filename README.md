@@ -563,11 +563,13 @@ Si la nueva versión rompe un sitio: `UPDATE site_pins SET version = <anterior>`
 
 ### 11.1. Estado
 
-**Observado:** `http://localhost:2019` expone `/load`, `/adapt`, `/validate` (docs oficiales).
+**Observado (docs oficiales):** el endpoint de administración por defecto es `localhost:2019`. Expone `/load`, `/stop`, `/config/[path]`, `/adapt`, `/pki/ca/<id>`, `/pki/ca/<id>/certificates` y `/reverse_proxy/upstreams`. **No existe `/validate`**: la validación se hace con `/adapt`, que devuelve `warnings` sin aplicar nada.
 
-**Observado:** `/load` es atómico; si la nueva config es inválida, Caddy conserva la anterior.
+**Observado:** `/load` es atómico y revierte automáticamente si falla; `Content-Type: text/caddyfile` selecciona el config adapter. Con `Cache-Control: must-revalidate` se fuerza el reload aunque la config sea idéntica.
 
-**HIPÓTESIS:** `caddy validate` por CLI no está disponible en todas las builds; la API `/adapt` es más portable.
+**Observado:** HTTPS local usa una CA propia en `pki/authorities/local`; `GET /pki/ca/local` informa de su estado y `caddy trust`/`caddy untrust` instalan o quitan la raíz del trust store.
+
+**Observado:** anteponer `http://` al site address desactiva la redirección HTTP→HTTPS; `status` debe consultarse contra `/config/`, no contra `caddy version`.
 
 ### 11.2. Código `native/src/caddy.rs`
 
@@ -586,24 +588,27 @@ pub async fn adapt(caddyfile: &str) -> Result<serde_json::Value, String> {
     res.json().await.map_err(|e| e.to_string())
 }
 
-pub async fn reload(caddyfile: &str) -> Result<(), String> {
-    // 1. Adaptar y validar antes de aplicar
-    adapt(caddyfile).await?;
+pub async fn reload(caddyfile: &str) -> Result<serde_json::Value, String> {
+    // 1. Adaptar antes de aplicar; conservamos los warnings del adaptador
+    let adapted = adapt(caddyfile).await?;
+    let warnings = adapted.get("warnings").cloned().unwrap_or_else(|| serde_json::json!([]));
 
     // 2. Aplicar atómicamente
     let res = reqwest::Client::new()
         .post(format!("{ADMIN}/load"))
         .header("Content-Type", "text/caddyfile")
+        .header("Cache-Control", "must-revalidate")
         .body(caddyfile.to_string())
         .send().await.map_err(|e| e.to_string())?;
     if !res.status().is_success() {
         return Err(format!("load failed: {}", res.status()));
     }
-    Ok(())
+    Ok(serde_json::json!({ "ok": true, "warnings": warnings }))
 }
 
 pub fn generate_caddyfile(domain: &str, root: &str, kind: &str, upstream: &str, tls_internal: bool) -> String {
-    let mut s = format!("{domain} {{\n");
+    let address = if tls_internal { domain.to_string() } else { format!("http://{domain}") };
+    let mut s = format!("{address} {{\n");
     if tls_internal { s.push_str("    tls internal\n"); }
     s.push_str(&format!("    root * {root}\n"));
     s.push_str("    encode gzip zstd\n");
@@ -627,6 +632,15 @@ Cada cambio de Caddyfile se guarda como `Caddyfile.<timestamp>` en `~/.local/sha
 La UI expone "Revertir a última versión válida" que hace `reload(<archivo_anterior>)`.
 
 Si `/load` falla, Caddy ya conserva la config previa; solo hay que reportar el error.
+
+### 11.4. Operación (docs oficiales)
+
+- Al arrancar Caddy de forma manual, usar `caddy run --resume` para recuperar la última config válida tras un reinicio.
+- El endpoint de administración se puede mover a un socket Unix con permisos mediante `CADDY_ADMIN` o la clave `admin` de la config; Lair usa el valor por defecto `localhost:2019` y asume un único escritor (la UI), por lo que no necesita `Etag`/`If-Match`.
+- Sitios sin `tlsInternal` se generan con `http://<dominio>` para evitar la redirección automática a HTTPS; los que lo tienen usan `tls internal` y la CA local de Caddy.
+- `caddy_status` consulta `GET /config/` para determinar si el daemon está vivo; `caddy version` solo informa de la versión del binario.
+- `caddy_ca_status` consulta `GET /pki/ca/local` y `Instalar CA` ejecuta `caddy trust`.
+- Las opciones globales se editan en el panel de Caddy y se anteponen al Caddyfile generado; `/adapt` devuelve sus `warnings` y se muestran en el banner.
 
 ---
 

@@ -295,7 +295,12 @@ function writeShim(name: string, target: string): void {
     return
   }
   const path = join(BIN_DIR, name)
-  writeFileSync(path, `#!/bin/sh\nexec "${target}" "$@"\n`)
+  // El phar de Composer usa `#!/usr/bin/env php`: necesita ver nuestros shims
+  // aunque la terminal aún no tenga el directorio en PATH.
+  const body = name === 'composer'
+    ? `#!/bin/sh\nexport PATH="${BIN_DIR}:$PATH"\nexec "${target}" "$@"\n`
+    : `#!/bin/sh\nexec "${target}" "$@"\n`
+  writeFileSync(path, body)
   chmodSync(path, 0o755)
 }
 
@@ -435,6 +440,7 @@ async function installComposerBinary(): Promise<{ path: string; sha256: string }
   mkdirSync(root, { recursive: true })
   const target = join(root, 'composer.phar')
   writeFileSync(target, bytes)
+  chmodSync(target, 0o755)
   writeShims('composer', target)
   return { path: target, sha256 }
 }

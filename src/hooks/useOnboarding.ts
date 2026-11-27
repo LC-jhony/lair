@@ -1,5 +1,7 @@
+import { useEffect, useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { flock } from '@/lib/ipc'
+import { isFullyInstalled, missingPackages } from '@/lib/onboarding'
 
 export const onboardingQueryKey = ['onboarding'] as const
 
@@ -25,9 +27,8 @@ export function useOnboarding() {
     mutationFn: async () => {
       const binaries = await flock.binaries.list()
       // Composer no está en el manifiesto: lo instala su propio paso.
-      for (const binary of binaries) {
-        if (binary.package === 'composer') continue
-        if (!binary.installed) await flock.binaries.installLatest(binary.package)
+      for (const name of missingPackages(binaries)) {
+        await flock.binaries.installLatest(name)
       }
     },
     onSuccess: refresh,
@@ -50,6 +51,22 @@ export function useOnboarding() {
       window.dispatchEvent(new Event('flock:onboarding-reset'))
     },
   })
+
+  // Si los tres pasos ya estaban hechos al arrancar (instalación anterior que
+  // no llegó a sellar `completedAt`), lo persistimos y entramos directo a la
+  // app, igual que Flock. Solo se evalúa en la primera lectura: durante el
+  // wizard, los pasos recién completados no deben cerrarlo prematuramente.
+  const checkedOnStart = useRef(false)
+  useEffect(() => {
+    if (!query.isSuccess || checkedOnStart.current) return
+    checkedOnStart.current = true
+    const data = query.data
+    if (!data?.completedAt && isFullyInstalled(data)) {
+      void flock.onboarding.complete()
+        .then(() => void client.invalidateQueries({ queryKey: onboardingQueryKey }))
+        .catch(() => {})
+    }
+  }, [client, query.isSuccess, query.data])
 
   const state = query.data
   const completedSteps = [

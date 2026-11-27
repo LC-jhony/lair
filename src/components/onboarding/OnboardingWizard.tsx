@@ -79,6 +79,17 @@ export function OnboardingWizard() {
   const progress = Math.round((doneCount / ITEMS.length) * 100)
   const busy = Object.values(states).some((value) => value === 'running')
 
+  // Persistir la salida aunque falle la escritura: el wizard nunca debe
+  // quedarse "congelado" tras un clic.
+  const leave = async () => {
+    try {
+      await complete.mutateAsync()
+    } catch {
+      // El arranque siguiente reintenta sellar la finalización.
+    }
+    setDismissed(true)
+  }
+
   const run = async () => {
     setStarted(true)
     setError(null)
@@ -109,6 +120,8 @@ export function OnboardingWizard() {
         return
       }
     }
+    // No sellamos aquí: hacerlo desmontaría el wizard antes de mostrar el
+    // botón "Abrir Lair". El sello lo hace `leave()` o el arranque siguiente.
     setFinished(true)
   }
 
@@ -206,17 +219,14 @@ export function OnboardingWizard() {
           <div className="flex items-center justify-between gap-3 border-t pt-4">
             <Button
               variant="ghost"
-              onClick={() => setDismissed(true)}
+              onClick={() => void leave()}
               disabled={busy}
             >
               {finished ? 'Ahora no' : 'Omitir'}
             </Button>
             {finished ? (
               <Button
-                onClick={async () => {
-                  await complete.mutateAsync()
-                  setDismissed(true)
-                }}
+                onClick={() => void leave()}
                 disabled={complete.isPending}
               >
                 Abrir Lair <ArrowRight className="size-4" />

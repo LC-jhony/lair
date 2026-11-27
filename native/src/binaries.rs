@@ -198,7 +198,13 @@ fn write_shim(package: &str, binary_path: &Path) -> Result<(), String> {
     let shim = dir.join(package);
     let mut file = fs::File::create(&shim).map_err(|e| e.to_string())?;
     use std::io::Write;
-    writeln!(file, "#!/bin/sh\nexec \"{target}\" \"$@\"").map_err(|e| e.to_string())?;
+    let dir_display = dir.to_string_lossy();
+    let body = if package == "composer" {
+      format!("#!/bin/sh\nexport PATH=\"{dir_display}:$PATH\"\nexec \"{target}\" \"$@\"")
+    } else {
+      format!("#!/bin/sh\nexec \"{target}\" \"$@\"")
+    };
+    writeln!(file, "{body}").map_err(|e| e.to_string())?;
     use std::os::unix::fs::PermissionsExt;
     fs::set_permissions(&shim, fs::Permissions::from_mode(0o755)).map_err(|e| e.to_string())?;
   }
@@ -456,6 +462,11 @@ pub async fn install_composer() -> Result<serde_json::Value, String> {
   fs::create_dir_all(&root).map_err(|e| e.to_string())?;
   let target = root.join("composer.phar");
   fs::write(&target, &phar).map_err(|e| e.to_string())?;
+  #[cfg(not(windows))]
+  {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(&target, fs::Permissions::from_mode(0o755)).map_err(|e| e.to_string())?;
+  }
   write_shim("composer", &target)?;
   record_installed(
     "composer",

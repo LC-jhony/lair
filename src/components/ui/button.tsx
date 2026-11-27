@@ -15,7 +15,7 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          'bg-blue-500 text-white shadow-sm hover:bg-blue-600 hover:shadow active:bg-blue-700',
+          'bg-blue-600 text-white shadow-sm hover:bg-blue-700 hover:shadow active:bg-blue-800',
         secondary:
           'bg-secondary text-secondary-foreground hover:bg-accent hover:text-accent-foreground active:bg-accent/70',
         outline:

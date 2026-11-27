@@ -24,7 +24,9 @@ export function useOnboarding() {
   const installBinaries = useMutation({
     mutationFn: async () => {
       const binaries = await flock.binaries.list()
+      // Composer no está en el manifiesto: lo instala su propio paso.
       for (const binary of binaries) {
+        if (binary.package === 'composer') continue
         if (!binary.installed) await flock.binaries.installLatest(binary.package)
       }
     },

@@ -60,6 +60,35 @@ export function useUninstallVersion() {
   })
 }
 
+export function usePathStatus() {
+  return useQuery({
+    queryKey: ['system', 'path'],
+    queryFn: () => flock.system.pathStatus(),
+  })
+}
+
+export function useEnsurePath() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: () => flock.system.ensurePath(),
+    onSuccess: () => client.invalidateQueries({ queryKey: ['system', 'path'] }),
+  })
+}
+
+export function useRemovePath() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: () => flock.system.removePath(),
+    onSuccess: () => client.invalidateQueries({ queryKey: ['system', 'path'] }),
+  })
+}
+
+export function useVerifyBinaries() {
+  return useMutation({
+    mutationFn: () => flock.binaries.verify(),
+  })
+}
+
 export function useCaStatus() {
   return useQuery({
     queryKey: ['caddy', 'ca'],

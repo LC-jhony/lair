@@ -1,6 +1,7 @@
 use std::fs;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
@@ -66,6 +67,40 @@ pub fn list() -> Result<Vec<BinaryVersion>, String> {
   rows
     .collect::<Result<Vec<_>, _>>()
     .map_err(|e| e.to_string())
+}
+
+fn shim_name(package: &str) -> &str {
+  match package {
+    "postgres" => "psql",
+    "composer" => "composer",
+    "valkey" => "valkey-server",
+    "redis" => "redis-server",
+    "mongodb" => "mongod",
+    other => other,
+  }
+}
+
+pub fn verify() -> Result<serde_json::Value, String> {
+  let results: Vec<serde_json::Value> = list()?
+    .into_iter()
+    .filter(|item| item.installed)
+    .map(|item| {
+      let name = shim_name(&item.package);
+      let shim = platform::shim_dir()
+        .unwrap_or_default()
+        .join(if cfg!(windows) { format!("{name}.cmd") } else { name.to_string() });
+      let output = Command::new(&shim).arg("--version").output();
+      match output {
+        Ok(result) if result.status.success() => serde_json::json!({
+          "package": item.package,
+          "ok": true,
+          "version": String::from_utf8_lossy(&result.stdout).trim().lines().next().unwrap_or("").to_string(),
+        }),
+        _ => serde_json::json!({ "package": item.package, "ok": false, "version": null }),
+      }
+    })
+    .collect();
+  Ok(serde_json::json!({ "results": results }))
 }
 
 pub fn versions(args_json: &str) -> Result<Vec<crate::manifest::PackageVersion>, String> {

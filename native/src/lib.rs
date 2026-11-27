@@ -5,6 +5,7 @@ mod caddy;
 mod crypto;
 mod db;
 mod manifest;
+mod path;
 mod platform;
 mod sites;
 
@@ -114,6 +115,10 @@ async fn dispatch(cmd: &str, args: &str) -> Result<Value, BackendError> {
       let root = payload["root"].as_str().unwrap_or_default();
       wrap(sites::unpark_folder(root), "DB_ERROR").map(|_| json!({ "ok": true }))
     }
+    "path_status" => wrap(path::status(), "DB_ERROR"),
+    "ensure_path" => wrap(path::ensure(), "DB_ERROR"),
+    "remove_path" => wrap(path::remove(), "DB_ERROR"),
+    "verify_binaries" => wrap(binaries::verify(), "DB_ERROR"),
     "update_site" => wrap(sites::update(args).await, "DB_ERROR"),
     "open_in_editor" => {
       let root = payload["root"].as_str().unwrap_or_default();

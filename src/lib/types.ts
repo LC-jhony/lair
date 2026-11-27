@@ -26,6 +26,19 @@ export interface NewSiteInput {
   tlsInternal: boolean
 }
 
+export interface PathStatus {
+  dir: string
+  inEnv: boolean
+  profiles: string[]
+  ok: boolean
+}
+
+export interface BinaryCheck {
+  package: string
+  ok: boolean
+  version: string | null
+}
+
 export interface SiteEnvironment {
   dns: { host: string; address: string; ok: boolean }
   ports: { http: boolean; https: boolean }

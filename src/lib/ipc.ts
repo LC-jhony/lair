@@ -6,7 +6,9 @@ import type {
   ManifestInfo,
   NewSiteInput,
   OnboardingState,
+  BinaryCheck,
   PackageVersion,
+  PathStatus,
   ParkedProject,
   WorktreeInfo,
   Site,
@@ -167,6 +169,18 @@ function createBrowserBridge(): FlockBridge {
         case 'open_in_editor':
         case 'open_terminal':
           return delay({ ok: true }) as Promise<T>
+        case 'path_status':
+          return delay({ dir: '~/.local/share/lair/bin', inEnv: false, profiles: [], ok: false }) as Promise<T>
+        case 'ensure_path':
+          return delay({ dir: '~/.local/share/lair/bin', inEnv: false, profiles: [], ok: true }) as Promise<T>
+        case 'remove_path':
+          return delay({ dir: '~/.local/share/lair/bin', inEnv: false, profiles: [], ok: false }) as Promise<T>
+        case 'verify_binaries':
+          return delay({
+            results: state.binaries
+              .filter((item) => item.installed)
+              .map((item) => ({ package: item.package, ok: true, version: item.version })),
+          }) as Promise<T>
         case 'site_environment': {
           const host = String(payload.host ?? 'acme.test')
           return delay({
@@ -360,6 +374,10 @@ export const ipc = {
   removeWorktree: (payload: { root: string; path: string }) =>
     bridge.invoke<{ ok: true }>('remove_worktree', payload),
   listBinaries: () => bridge.invoke<BinaryVersion[]>('list_binaries'),
+  verifyBinaries: () => bridge.invoke<{ results: BinaryCheck[] }>('verify_binaries'),
+  pathStatus: () => bridge.invoke<PathStatus>('path_status'),
+  ensurePath: () => bridge.invoke<PathStatus>('ensure_path'),
+  removePath: () => bridge.invoke<PathStatus>('remove_path'),
   installBinary: (payload: { package: string; version: string; platform: string }) =>
     bridge.invoke<{ path: string; sha256: string }>('install_binary', payload),
   listVersions: (packageName?: string) =>
@@ -413,6 +431,7 @@ export const flock = {
   },
   binaries: {
     list: ipc.listBinaries,
+    verify: ipc.verifyBinaries,
     versions: (packageName?: string) => ipc.listVersions(packageName),
     install: (payload: { package: string; version: string }) =>
       ipc.installBinary({ ...payload, platform: currentPlatform() }),
@@ -444,6 +463,11 @@ export const flock = {
       await ipc.caddyTrust()
       return { trusted: true, detail: 'CA added to the local trust store' }
     },
+  },
+  system: {
+    pathStatus: ipc.pathStatus,
+    ensurePath: ipc.ensurePath,
+    removePath: ipc.removePath,
   },
   manifest: { get: ipc.fetchManifest },
   onboarding: {

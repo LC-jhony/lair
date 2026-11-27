@@ -1,9 +1,19 @@
 import { execFileSync, spawn } from 'node:child_process'
 import { lookup } from 'node:dns/promises'
 import { connect } from 'node:net'
-import { createPublicKey, randomUUID, verify as verifySignature } from 'node:crypto'
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { basename, dirname, join } from 'node:path'
+import { createHash, createPublicKey, randomUUID, verify as verifySignature } from 'node:crypto'
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
+import { basename, dirname, join, relative } from 'node:path'
 import { app, ipcMain, shell } from 'electron'
 
 interface LocalState {
@@ -228,6 +238,206 @@ const backend: BackendLike | null = (() => {
 })()
 
 const CADDY_ADMIN = 'http://localhost:2019'
+
+const DATA_ROOT = join(app.getPath('home'), '.local', 'share', 'lair')
+const BIN_DIR = join(DATA_ROOT, 'bin')
+const PATH_MARKER = '# Lair (added by Lair install)'
+
+/** Ejecutables reales dentro de cada paquete (los mirrors conservan el layout del vendor). */
+const EXECUTABLES: Record<string, string[]> = {
+  php: ['php', 'php-fpm', 'php.exe'],
+  'php-fpm': ['php-fpm', 'php-fpm.exe'],
+  frankenphp: ['frankenphp', 'frankenphp.exe'],
+  node: ['node', 'node.exe'],
+  composer: ['composer.phar', 'composer'],
+  postgres: ['psql', 'psql.exe'],
+  mysql: ['mysql', 'mysql.exe'],
+  mariadb: ['mariadb', 'mariadb.exe'],
+  mongodb: ['mongod', 'mongod.exe'],
+  valkey: ['valkey-server', 'valkey-server.exe'],
+  redis: ['redis-server', 'redis-server.exe'],
+  meilisearch: ['meilisearch', 'meilisearch.exe'],
+  typesense: ['typesense-server', 'typesense-server.exe'],
+  rustfs: ['rustfs', 'rustfs.exe'],
+  cloudflared: ['cloudflared', 'cloudflared.exe'],
+}
+
+/** Nombres de shim a crear por paquete (node expone node, npm y npx). */
+const SHIMS: Record<string, string[]> = {
+  php: ['php', 'php-fpm'],
+  node: ['node', 'npm', 'npx'],
+  composer: ['composer'],
+  postgres: ['psql'],
+  mariadb: ['mariadb'],
+  mysql: ['mysql'],
+  mongodb: ['mongod'],
+  valkey: ['valkey-server', 'valkey-cli'],
+  redis: ['redis-server', 'redis-cli'],
+}
+
+function findExecutable(root: string, names: string[]): string | null {
+  if (!existsSync(root)) return null
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    const path = join(root, entry.name)
+    if (entry.isFile() && names.includes(entry.name)) return path
+    if (entry.isDirectory()) {
+      const found = findExecutable(path, names)
+      if (found) return found
+    }
+  }
+  return null
+}
+
+function writeShim(name: string, target: string): void {
+  mkdirSync(BIN_DIR, { recursive: true })
+  if (process.platform === 'win32') {
+    writeFileSync(join(BIN_DIR, `${name}.cmd`), `@echo off\n"${target}" %*\n`)
+    return
+  }
+  const path = join(BIN_DIR, name)
+  writeFileSync(path, `#!/bin/sh\nexec "${target}" "$@"\n`)
+  chmodSync(path, 0o755)
+}
+
+function writeShims(packageName: string, executable: string): void {
+  const directory = dirname(executable)
+  for (const name of SHIMS[packageName] ?? [packageName]) {
+    const candidate = name === packageName ? executable : findExecutable(directory, [name])
+    if (candidate) writeShim(name, candidate)
+  }
+}
+
+function shellProfiles(): string[] {
+  const home = app.getPath('home')
+  const profiles = [join(home, '.bashrc')]
+  const zshrc = join(home, '.zshrc')
+  if (existsSync(zshrc)) profiles.push(zshrc)
+  return profiles
+}
+
+function pathStatus(): {
+  dir: string
+  inEnv: boolean
+  profiles: string[]
+  ok: boolean
+} {
+  const profiles = shellProfiles().filter((path) => {
+    try {
+      return readFileSync(path, 'utf8').includes(PATH_MARKER)
+    } catch {
+      return false
+    }
+  })
+  const inEnv = (process.env.PATH ?? '')
+    .split(process.platform === 'win32' ? ';' : ':')
+    .includes(BIN_DIR)
+  return { dir: BIN_DIR, inEnv, profiles, ok: inEnv || profiles.length > 0 }
+}
+
+function setMarkedBlock(path: string, lines: string[]): void {
+  const existing = existsSync(path) ? readFileSync(path, 'utf8').split(/\r?\n/) : []
+  const start = existing.indexOf(PATH_MARKER)
+  const base = start >= 0 ? existing.slice(0, start) : existing
+  writeFileSync(path, [...base, PATH_MARKER, ...lines, ''].join('\n'))
+}
+
+function ensurePath(): ReturnType<typeof pathStatus> {
+  mkdirSync(BIN_DIR, { recursive: true })
+  if (process.platform !== 'win32') {
+    for (const path of shellProfiles()) {
+      setMarkedBlock(path, [
+        `if [ -d "${BIN_DIR}" ]; then export PATH="${BIN_DIR}:$PATH"; fi`,
+      ])
+    }
+    const fishDir = join(app.getPath('home'), '.config', 'fish', 'conf.d')
+    if (existsSync(fishDir)) {
+      setMarkedBlock(join(fishDir, 'lair.fish'), [
+        `if test -d "${BIN_DIR}"`,
+        `    set -gx PATH "${BIN_DIR}" $PATH`,
+        'end',
+      ])
+    }
+    const envDir = join(app.getPath('home'), '.config', 'environment.d')
+    mkdirSync(envDir, { recursive: true })
+    setMarkedBlock(join(envDir, 'lair.conf'), [`PATH=${BIN_DIR}:${'${PATH}'}`])
+  }
+  return pathStatus()
+}
+
+function removePath(): ReturnType<typeof pathStatus> {
+  for (const path of [...shellProfiles(), join(app.getPath('home'), '.config', 'fish', 'conf.d', 'lair.fish'), join(app.getPath('home'), '.config', 'environment.d', 'lair.conf')]) {
+    if (!existsSync(path)) continue
+    const lines = readFileSync(path, 'utf8').split(/\r?\n/)
+    const start = lines.indexOf(PATH_MARKER)
+    if (start >= 0) writeFileSync(path, lines.slice(0, start).join('\n').trimEnd() + '\n')
+  }
+  return pathStatus()
+}
+
+async function installFromManifest(packageName: string, version: string): Promise<{ path: string; sha256: string }> {
+  const manifest = await ensureManifest()
+  if (!manifest) throw new Error('MANIFEST_UNAVAILABLE')
+  const artifact = manifest.packages[packageName]?.[version]?.[platformKey()]
+  if (!artifact) throw new Error(`MANIFEST_UNAVAILABLE: ${packageName} ${version}`)
+
+  const response = await fetch(String(artifact.url))
+  if (!response.ok) throw new Error(`HTTP_ERROR: ${response.status}`)
+  const bytes = Buffer.from(await response.arrayBuffer())
+  const sha256 = createHash('sha256').update(bytes).digest('hex')
+  if (sha256 !== artifact.sha256) throw new Error('SHA256_MISMATCH')
+
+  const root = join(DATA_ROOT, 'versions', packageName, version)
+  const staging = `${root}.staging`
+  rmSync(staging, { recursive: true, force: true })
+  mkdirSync(staging, { recursive: true })
+  const archiveName = String(artifact.url).split('/').pop() ?? 'artifact.tar.gz'
+  const archivePath = join(staging, archiveName)
+  writeFileSync(archivePath, bytes)
+  if (archiveName.endsWith('.tar.gz')) {
+    execFileSync('tar', ['-xzf', archivePath, '-C', staging])
+  } else if (archiveName.endsWith('.zip')) {
+    execFileSync('unzip', ['-o', archivePath, '-d', staging])
+  } else {
+    throw new Error('EXTRACT_FAILED: formato no soportado')
+  }
+  rmSync(archivePath, { force: true })
+
+  const entries = readdirSync(staging, { withFileTypes: true })
+  if (entries.length === 1 && entries[0].isDirectory()) {
+    const inner = join(staging, entries[0].name)
+    for (const item of readdirSync(inner)) {
+      renameSync(join(inner, item), join(staging, item))
+    }
+    rmSync(inner, { recursive: true, force: true })
+  }
+
+  const executable = findExecutable(staging, EXECUTABLES[packageName] ?? [packageName])
+  if (!executable) throw new Error(`EXECUTABLE_NOT_FOUND: ${packageName}`)
+  rmSync(root, { recursive: true, force: true })
+  renameSync(staging, root)
+  const finalExecutable = join(root, relative(staging, executable))
+  writeShims(packageName, finalExecutable)
+  return { path: finalExecutable, sha256 }
+}
+
+async function installComposerBinary(): Promise<{ path: string; sha256: string }> {
+  const urls = [
+    'https://getcomposer.org/download/latest-stable/composer.phar',
+    'https://getcomposer.org/download/latest-stable/composer.phar.sha256',
+  ]
+  const [pharResponse, checksumResponse] = await Promise.all(urls.map((url) => fetch(url)))
+  if (!pharResponse.ok || !checksumResponse.ok) throw new Error('HTTP_ERROR al descargar Composer')
+  const bytes = Buffer.from(await pharResponse.arrayBuffer())
+  const expected = (await checksumResponse.text()).trim().split(/\s+/)[0]
+  const sha256 = createHash('sha256').update(bytes).digest('hex')
+  if (sha256 !== expected) throw new Error('SHA256_MISMATCH: composer.phar')
+  const root = join(DATA_ROOT, 'versions', 'composer', 'stable')
+  mkdirSync(root, { recursive: true })
+  const target = join(root, 'composer.phar')
+  writeFileSync(target, bytes)
+  writeShims('composer', target)
+  return { path: target, sha256 }
+}
 
 function caddyBinaryPath(): string {
   return join(app.getPath('home'), '.local', 'share', 'lair', 'bin', 'caddy')
@@ -489,6 +699,7 @@ async function localInvoke(cmd: string, args: Record<string, unknown>): Promise<
     case 'install_binary': {
       const packageName = String(args.package)
       const version = String(args.version ?? 'stable')
+      const installed = await installFromManifest(packageName, version)
       let binary = state.binaries.find(
         (item) => item.package === packageName && item.version === version,
       )
@@ -502,18 +713,20 @@ async function localInvoke(cmd: string, args: Record<string, unknown>): Promise<
           platform: String(args.platform ?? platformKey()),
           installed: true,
           isDefault: !hadDefault,
-          path: join(dataDir, 'versions', packageName, version),
-          sha256: '',
+          path: installed.path,
+          sha256: installed.sha256,
         }
         state.binaries.push(binary)
       } else {
         binary.installed = true
+        binary.path = installed.path
+        binary.sha256 = installed.sha256
       }
       state.onboarding.binariesInstalled = ['php', 'node'].every((name) =>
         state.binaries.some((item) => item.package === name && item.installed),
       )
       writeState(state)
-      return { path: binary.path, sha256: '' }
+      return { path: installed.path, sha256: installed.sha256 }
     }
     case 'set_default_binary':
       for (const item of state.binaries) {
@@ -529,8 +742,27 @@ async function localInvoke(cmd: string, args: Record<string, unknown>): Promise<
       )
       writeState(state)
       return { ok: true }
-    case 'install_composer':
-      return localInvoke('install_binary', { package: 'composer', version: 'stable' })
+    case 'install_composer': {
+      const installed = await installComposerBinary()
+      const binary = state.binaries.find((item) => item.package === 'composer')
+      if (!binary) {
+        state.binaries.push({
+          package: 'composer',
+          version: 'stable',
+          platform: platformKey(),
+          installed: true,
+          isDefault: true,
+          path: installed.path,
+          sha256: installed.sha256,
+        })
+      } else {
+        binary.installed = true
+        binary.path = installed.path
+        binary.sha256 = installed.sha256
+      }
+      writeState(state)
+      return { path: installed.path, sha256: installed.sha256 }
+    }
     case 'fetch_manifest':
       return {
         schema: 1,
@@ -561,6 +793,27 @@ async function localInvoke(cmd: string, args: Record<string, unknown>): Promise<
     }
     case 'caddy_reload':
       return reloadCaddyConfig(state)
+    case 'path_status':
+      return pathStatus()
+    case 'ensure_path':
+      return ensurePath()
+    case 'remove_path':
+      return removePath()
+    case 'verify_binaries': {
+      const results = state.binaries
+        .filter((item) => item.installed)
+        .map((item) => {
+          const shimName = (SHIMS[String(item.package)] ?? [String(item.package)])[0]
+          const shim = process.platform === 'win32' ? join(BIN_DIR, `${shimName}.cmd`) : join(BIN_DIR, shimName)
+          try {
+            const output = execFileSync(shim, ['--version'], { encoding: 'utf8', timeout: 5000 })
+            return { package: item.package, ok: true, version: output.trim().split('\n')[0] }
+          } catch {
+            return { package: item.package, ok: false, version: null }
+          }
+        })
+      return { results }
+    }
     case 'site_environment': {
       const host = String(args.host ?? 'acme.test')
       let address = ''

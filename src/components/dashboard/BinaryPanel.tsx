@@ -15,9 +15,13 @@ import { VersionCatalog } from '@/components/binaries/VersionCatalog'
 import {
   useCaStatus,
   useCaddyStatus,
+  useEnsurePath,
   useGlobalOptions,
+  usePathStatus,
+  useRemovePath,
   useSetGlobalOptions,
   useTrustCa,
+  useVerifyBinaries,
 } from '@/hooks/useBinaries'
 
 const PACKAGES = [
@@ -44,6 +48,10 @@ export function BinaryPanel() {
   const saveGlobals = useSetGlobalOptions()
   const [optionsOpen, setOptionsOpen] = useState(false)
   const [options, setOptions] = useState('')
+  const { data: path } = usePathStatus()
+  const ensurePath = useEnsurePath()
+  const removePath = useRemovePath()
+  const verify = useVerifyBinaries()
 
   return (
     <section className="space-y-4">
@@ -95,6 +103,65 @@ export function BinaryPanel() {
             </Button>
           </div>
           {caddy?.configPath && <p className="truncate text-xs">{caddy.configPath}</p>}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">PATH del sistema</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="truncate font-mono text-xs text-muted-foreground">{path?.dir}</p>
+              <p className="text-xs text-muted-foreground">
+                {path?.ok ? 'Configurado en tus shells' : 'Pendiente: abre una terminal nueva tras añadirlo'}
+              </p>
+            </div>
+            <div className="flex shrink-0 gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={ensurePath.isPending}
+                onClick={() => ensurePath.mutate()}
+              >
+                Añadir al PATH
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={removePath.isPending || !path?.ok}
+                onClick={() => removePath.mutate()}
+              >
+                Quitar
+              </Button>
+            </div>
+          </div>
+          <div className="flex items-center justify-between gap-3 border-t pt-3">
+            <span className="text-xs text-muted-foreground">
+              Verifica que los shims responden en una terminal nueva.
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={verify.isPending}
+              onClick={() => verify.mutate()}
+            >
+              Verificar binarios
+            </Button>
+          </div>
+          {verify.data?.results?.length ? (
+            <ul className="space-y-1 text-xs">
+              {verify.data.results.map((item) => (
+                <li key={item.package} className="flex justify-between">
+                  <span>{item.package}</span>
+                  <span className={item.ok ? 'text-emerald-500' : 'text-destructive'}>
+                    {item.ok ? item.version : 'no disponible'}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </CardContent>
       </Card>
 

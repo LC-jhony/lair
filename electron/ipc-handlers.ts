@@ -528,6 +528,7 @@ function ensurePhpFpm(state: LocalState): void {
   })
   proc.unref()
   state.caddy.fpmPid = proc.pid
+  writeState(state)
 }
 
 async function startCaddy(state: LocalState): Promise<{ ok: boolean; running: boolean; detail: string; port?: number }> {

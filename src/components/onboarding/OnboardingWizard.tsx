@@ -137,8 +137,7 @@ export function OnboardingWizard() {
           </div>
           {started ? (
             <div className="space-y-2 pt-1">
-              <Progress value={progress} />
-              <p className="text-right text-xs text-muted-foreground">{progress}% completado</p>
+              <Progress value={progress} showLabel />
             </div>
           ) : null}
         </CardHeader>

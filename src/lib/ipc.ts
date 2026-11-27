@@ -172,10 +172,22 @@ function createBrowserBridge(): FlockBridge {
         }
         case 'hosts_status': {
           const entries = state.sites.flatMap((site) => site.domains ?? [])
-          return delay({ entries, missing: entries }) as Promise<T>
+          return delay({
+            entries,
+            missing: entries,
+            privileged: false,
+            httpPort: 8080,
+            httpsPort: 8443,
+          }) as Promise<T>
         }
         case 'hosts_ensure':
-          return delay({ ok: true, missing: [] }) as Promise<T>
+          return delay({
+            ok: true,
+            missing: [],
+            privileged: false,
+            httpPort: 8080,
+            httpsPort: 8443,
+          }) as Promise<T>
         case 'park_folder':
           state.parkedRoots = state.parkedRoots ?? []
           if (!state.parkedRoots.includes(String(payload.root))) {
@@ -392,8 +404,22 @@ export const ipc = {
   siteEnvironment: (host: string) => bridge.invoke<SiteEnvironment>('site_environment', { host }),
   listParked: () => bridge.invoke<ParkedProject[]>('list_parked'),
   syncProjects: () => bridge.invoke<{ created: Site[] }>('sync_projects'),
-  hostsStatus: () => bridge.invoke<{ missing: string[]; entries: string[] }>('hosts_status'),
-  hostsEnsure: () => bridge.invoke<{ ok: boolean; missing: string[] }>('hosts_ensure'),
+  hostsStatus: () =>
+    bridge.invoke<{
+      missing: string[]
+      entries: string[]
+      privileged: boolean
+      httpPort: number
+      httpsPort: number
+    }>('hosts_status'),
+  hostsEnsure: () =>
+    bridge.invoke<{
+      ok: boolean
+      missing: string[]
+      privileged: boolean
+      httpPort: number
+      httpsPort: number
+    }>('hosts_ensure'),
   parkFolder: (root: string) => bridge.invoke<{ ok: true }>('park_folder', { root }),
   unparkFolder: (root: string) => bridge.invoke<{ ok: true }>('unpark_folder', { root }),
   updateSite: (payload: Record<string, unknown>) =>

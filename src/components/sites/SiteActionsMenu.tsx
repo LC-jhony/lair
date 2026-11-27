@@ -1,5 +1,10 @@
 import { ExternalLink, MoreHorizontal, RefreshCw, Trash2 } from 'lucide-react'
-import { useReloadCaddy, useRemoveSite, useSiteEnvironment } from '@/hooks/useSites'
+import {
+  useHostsStatus,
+  useReloadCaddy,
+  useRemoveSite,
+  useSiteEnvironment,
+} from '@/hooks/useSites'
 import { ipc } from '@/lib/ipc'
 import { browserUrl } from '@/lib/site-url'
 import type { Site } from '@/lib/types'
@@ -20,6 +25,7 @@ export function SiteActionsMenu({ site }: SiteActionsMenuProps) {
   const reload = useReloadCaddy()
   const domain = site.domains[0] ?? `${site.name}.test`
   const environment = useSiteEnvironment(domain)
+  const hosts = useHostsStatus()
 
   return (
     <DropdownMenu>
@@ -34,7 +40,7 @@ export function SiteActionsMenu({ site }: SiteActionsMenuProps) {
           onClick={() => {
             const alias = `${site.name.toLowerCase().replace(/[^a-z0-9-]+/g, '-')}.localhost`
             const host = environment.data?.dns.ok ? domain : alias
-            void ipc.openSite(browserUrl(host, site.tlsInternal === true))
+            void ipc.openSite(browserUrl(host, site.tlsInternal === true, hosts.data?.privileged === true))
           }}
         >
           <ExternalLink className="size-4" />

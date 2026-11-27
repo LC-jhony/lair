@@ -77,9 +77,10 @@ function SiteSettingsCard({
 
   const domain = site.domains[0] ?? `${site.name}.test`
   const environment = useSiteEnvironment(domain)
+  const hosts = useHostsStatus()
   const alias = `${site.name.toLowerCase().replace(/[^a-z0-9-]+/g, '-')}.localhost`
   const host = environment.data?.dns.ok ? domain : alias
-  const url = browserUrl(host, site.tlsInternal === true)
+  const url = browserUrl(host, site.tlsInternal === true, hosts.data?.privileged === true)
   const phpVersion = site.phpVersion ?? phpOptions[0]?.value ?? '8.5'
   const nodeVersion = site.nodeVersion ?? nodeOptions[0]?.value ?? '24'
 
@@ -278,7 +279,9 @@ export function SitesPane() {
       banner.notify(
         result.missing.length
           ? `Faltan dominios: ${result.missing.join(', ')}`
-          : 'Dominios .test activados en /etc/hosts',
+          : result.privileged
+            ? 'Dominios .test activos. Caddy usa los puertos 80 y 443.'
+            : 'Dominios .test activados en /etc/hosts',
       )
     } catch (failure) {
       banner.report(`No se pudieron activar los dominios: ${(failure as Error).message}`)
@@ -333,7 +336,9 @@ export function SitesPane() {
             onClick={() => void activateHosts()}
             title="Añade los dominios .test a /etc/hosts (pide permisos de administrador)"
           >
-            Activar hosts .test ({hosts.data?.missing.length ?? 0})
+            {hosts.data?.privileged && !hosts.data.missing.length
+              ? 'Hosts .test activos'
+              : `Activar hosts .test (${hosts.data?.missing.length ?? 0})`}
           </Button>
         </div>
       </div>

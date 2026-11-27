@@ -457,10 +457,12 @@ function caddyConfigPath(): string {
 
 function buildCaddyfile(state: LocalState, globals?: string): string {
   const configured = globals ?? String(state.caddy.globalOptions ?? '')
-  // Puertos no privilegiados por defecto: 80/443 requieren permisos de root.
+  const privileged = state.caddy.privileged === true
+  const httpPort = privileged ? 80 : 8080
+  const httpsPort = privileged ? 443 : 8443
   const options =
     configured.trim() ||
-    '{\n  admin localhost:2019\n  http_port 8080\n  https_port 8443\n}'
+    `{\n  admin localhost:2019\n  http_port ${httpPort}\n  https_port ${httpsPort}\n}`
   return `${options}\n\n${state.sites.map(caddyfileForSite).join('\n')}`
 }
 
@@ -487,7 +489,23 @@ function sanitizeHost(value: string): string {
   return /^[a-z0-9][a-z0-9.-]*$/.test(host) ? host : ''
 }
 
-function hostsStatus(state: LocalState): { missing: string[]; entries: string[] } {
+function hasPrivilegedPorts(): boolean {
+  try {
+    return execFileSync('getcap', [caddyBinaryPath()], { encoding: 'utf8' }).includes(
+      'cap_net_bind_service',
+    )
+  } catch {
+    return false
+  }
+}
+
+function hostsStatus(state: LocalState): {
+  missing: string[]
+  entries: string[]
+  privileged: boolean
+  httpPort: number
+  httpsPort: number
+} {
   let content = ''
   try {
     content = readFileSync('/etc/hosts', 'utf8')
@@ -498,24 +516,63 @@ function hostsStatus(state: LocalState): { missing: string[]; entries: string[] 
     .flatMap((site) => (site.domains as string[] | undefined) ?? [])
     .map(sanitizeHost)
     .filter(Boolean)
+  const privileged = hasPrivilegedPorts()
   return {
     entries,
     missing: entries.filter(
       (host) => !new RegExp(`(^|\\s)${host.replace(/\./g, '\\.')}(\\s|$)`).test(content),
     ),
+    privileged,
+    httpPort: privileged ? 80 : 8080,
+    httpsPort: privileged ? 443 : 8443,
   }
 }
 
-async function ensureHosts(state: LocalState): Promise<{ ok: boolean; missing: string[] }> {
-  const { missing } = hostsStatus(state)
-  if (!missing.length) return { ok: true, missing: [] }
-  const lines = missing.map((host) => {
+async function ensureHosts(state: LocalState): Promise<{
+  ok: boolean
+  missing: string[]
+  privileged: boolean
+  httpPort: number
+  httpsPort: number
+}> {
+  const before = hostsStatus(state)
+  if (!before.missing.length && before.privileged) {
+    return {
+      ok: true,
+      missing: [],
+      privileged: true,
+      httpPort: before.httpPort,
+      httpsPort: before.httpsPort,
+    }
+  }
+  const lines = before.missing.map((host) => {
     const pattern = host.replace(/\./g, '\\.')
-    return `grep -Eq '^127\\.0\\.0\\.1[[:space:]].*[[:space:]]${pattern}([[:space:]]|$)' /etc/hosts || echo "127.0.0.1 ${host}" >> /etc/hosts`
+    return `grep -Eq '^127\\.0\\.0\\.1[[:space:]]+${pattern}([[:space:]]|$)' /etc/hosts || echo "127.0.0.1 ${host}" >> /etc/hosts`
   })
-  const script = ['set -e', '# Lair virtual hosts', ...lines].join('\n')
+  const script = [
+    'set -e',
+    '# Lair virtual hosts',
+    ...lines,
+    `/usr/sbin/setcap cap_net_bind_service=+ep ${caddyBinaryPath()} 2>/dev/null || true`,
+  ].join('\n')
   execFileSync('pkexec', ['/bin/sh', '-c', script], { stdio: 'ignore', timeout: 120000 })
-  return { ok: true, missing: hostsStatus(state).missing }
+
+  const after = hostsStatus(state)
+  state.caddy.privileged = after.privileged
+  writeState(state)
+  if (after.privileged && !before.privileged) {
+    await stopCaddy(state)
+    await startCaddy(state)
+  } else if (!after.missing.length) {
+    await reloadCaddyConfig(state)
+  }
+  return {
+    ok: true,
+    missing: after.missing,
+    privileged: after.privileged,
+    httpPort: after.httpPort,
+    httpsPort: after.httpsPort,
+  }
 }
 
 async function syncProjects(state: LocalState): Promise<{ created: Array<Record<string, unknown>> }> {

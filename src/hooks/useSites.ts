@@ -1,5 +1,6 @@
+import { useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ipc } from '@/lib/ipc'
+import { flock, ipc } from '@/lib/ipc'
 import { useTrustCa } from './useBinaries'
 import { useStatusBanner } from '@/components/layout'
 import { generateCaddyfile } from '@/lib/caddyfile'
@@ -13,10 +14,44 @@ function refreshSites(client: ReturnType<typeof useQueryClient>) {
   void client.invalidateQueries({ queryKey: parkedQueryKey })
 }
 
+let projectsSynced = false
+
+/** Registra automáticamente los proyectos encontrados en la carpeta raíz. */
+export function useSyncProjects() {
+  const client = useQueryClient()
+  useEffect(() => {
+    if (projectsSynced) return
+    projectsSynced = true
+    void flock.sites
+      .sync()
+      .then(() => refreshSites(client))
+      .catch(() => {})
+  }, [client])
+}
+
 export function useSites() {
+  useSyncProjects()
   return useQuery({
     queryKey: sitesQueryKey,
     queryFn: () => ipc.listSites(),
+  })
+}
+
+export function useHostsStatus() {
+  return useQuery({
+    queryKey: ['system', 'hosts'],
+    queryFn: () => flock.system.hostsStatus(),
+  })
+}
+
+export function useHostsEnsure() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: () => flock.system.hostsEnsure(),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['system', 'hosts'] })
+      void client.invalidateQueries({ queryKey: ['site-environment'] })
+    },
   })
 }
 

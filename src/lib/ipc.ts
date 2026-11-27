@@ -107,7 +107,7 @@ function createBrowserBridge(): FlockBridge {
   return {
     onEvent: () => () => {},
     setTitleBarColors: () => {},
-    invoke: <T>(cmd: string, args?: unknown): Promise<T> => {
+    invoke: async <T>(cmd: string, args?: unknown): Promise<T> => {
       const state = read()
       const payload = (args ?? {}) as Record<string, unknown>
 
@@ -155,6 +155,27 @@ function createBrowserBridge(): FlockBridge {
           }
           return delay(found) as Promise<T>
         }
+        case 'sync_projects': {
+          const found = await bridge.invoke<ParkedProject[]>('list_parked')
+          const created = found.map((project) => ({
+            id: `demo-${project.name}`,
+            name: project.name,
+            root: project.root,
+            kind: project.kind,
+            domains: [project.domain],
+            tlsInternal: true,
+            status: 'running' as Site['status'],
+          }))
+          state.sites.push(...created)
+          write(state)
+          return delay({ created }) as Promise<T>
+        }
+        case 'hosts_status': {
+          const entries = state.sites.flatMap((site) => site.domains ?? [])
+          return delay({ entries, missing: entries }) as Promise<T>
+        }
+        case 'hosts_ensure':
+          return delay({ ok: true, missing: [] }) as Promise<T>
         case 'park_folder':
           state.parkedRoots = state.parkedRoots ?? []
           if (!state.parkedRoots.includes(String(payload.root))) {
@@ -370,6 +391,9 @@ export const ipc = {
   deleteSite: (id: string) => bridge.invoke<{ ok: true }>('delete_site', { id }),
   siteEnvironment: (host: string) => bridge.invoke<SiteEnvironment>('site_environment', { host }),
   listParked: () => bridge.invoke<ParkedProject[]>('list_parked'),
+  syncProjects: () => bridge.invoke<{ created: Site[] }>('sync_projects'),
+  hostsStatus: () => bridge.invoke<{ missing: string[]; entries: string[] }>('hosts_status'),
+  hostsEnsure: () => bridge.invoke<{ ok: boolean; missing: string[] }>('hosts_ensure'),
   parkFolder: (root: string) => bridge.invoke<{ ok: true }>('park_folder', { root }),
   unparkFolder: (root: string) => bridge.invoke<{ ok: true }>('unpark_folder', { root }),
   updateSite: (payload: Record<string, unknown>) =>
@@ -430,6 +454,7 @@ export const flock = {
     remove: ipc.deleteSite,
     environment: ipc.siteEnvironment,
     parked: ipc.listParked,
+    sync: ipc.syncProjects,
     park: ipc.parkFolder,
     unpark: ipc.unparkFolder,
     update: ipc.updateSite,
@@ -477,6 +502,8 @@ export const flock = {
     },
   },
   system: {
+    hostsStatus: ipc.hostsStatus,
+    hostsEnsure: ipc.hostsEnsure,
     pathStatus: ipc.pathStatus,
     ensurePath: ipc.ensurePath,
     removePath: ipc.removePath,

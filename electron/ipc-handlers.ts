@@ -482,6 +482,73 @@ function pidAlive(pid: number): boolean {
   }
 }
 
+function sanitizeHost(value: string): string {
+  const host = value.trim().toLowerCase()
+  return /^[a-z0-9][a-z0-9.-]*$/.test(host) ? host : ''
+}
+
+function hostsStatus(state: LocalState): { missing: string[]; entries: string[] } {
+  let content = ''
+  try {
+    content = readFileSync('/etc/hosts', 'utf8')
+  } catch {
+    // Sin acceso al archivo: se reporta como pendiente.
+  }
+  const entries = state.sites
+    .flatMap((site) => (site.domains as string[] | undefined) ?? [])
+    .map(sanitizeHost)
+    .filter(Boolean)
+  return {
+    entries,
+    missing: entries.filter(
+      (host) => !new RegExp(`(^|\\s)${host.replace(/\./g, '\\.')}(\\s|$)`).test(content),
+    ),
+  }
+}
+
+async function ensureHosts(state: LocalState): Promise<{ ok: boolean; missing: string[] }> {
+  const { missing } = hostsStatus(state)
+  if (!missing.length) return { ok: true, missing: [] }
+  const lines = missing.map((host) => {
+    const pattern = host.replace(/\./g, '\\.')
+    return `grep -Eq '^127\\.0\\.0\\.1[[:space:]].*[[:space:]]${pattern}([[:space:]]|$)' /etc/hosts || echo "127.0.0.1 ${host}" >> /etc/hosts`
+  })
+  const script = ['set -e', '# Lair virtual hosts', ...lines].join('\n')
+  execFileSync('pkexec', ['/bin/sh', '-c', script], { stdio: 'ignore', timeout: 120000 })
+  return { ok: true, missing: hostsStatus(state).missing }
+}
+
+async function syncProjects(state: LocalState): Promise<{ created: Array<Record<string, unknown>> }> {
+  const projects = scanParked(state)
+  const created: Array<Record<string, unknown>> = []
+  for (const project of projects) {
+    const duplicate = state.sites.some(
+      (site) =>
+        String(site.root) === project.root ||
+        ((site.domains as string[] | undefined) ?? []).includes(project.domain),
+    )
+    if (duplicate) continue
+    const php = state.binaries.find((item) => item.package === 'php' && item.installed)
+    const site: Record<string, unknown> = {
+      name: project.name,
+      root: project.root,
+      kind: project.kind,
+      domains: [project.domain],
+      tlsInternal: true,
+      id: randomUUID(),
+      status: 'running',
+    }
+    if (project.kind === 'php') site.phpVersion = php?.version ?? '8.4.28'
+    state.sites.push(site)
+    created.push(site)
+  }
+  if (created.length) {
+    writeState(state)
+    await reloadCaddyConfig(state)
+  }
+  return { created }
+}
+
 async function waitForCaddy(proc: ReturnType<typeof spawn>, ms = 2500): Promise<boolean> {
   const deadline = Date.now() + ms
   while (Date.now() < deadline) {
@@ -653,8 +720,10 @@ function caddyfileForSite(site: Record<string, unknown>): string {
   const domain = String((site.domains as string[] | undefined)?.[0] ?? `${site.name}.test`)
   const root = siteDocumentRoot(String(site.root ?? ''))
   // `localhost` permite abrir el sitio aunque `.test` no resuelva en este equipo.
-  const httpAddresses = [`http://${domain}`, 'http://localhost']
-  const httpsAddresses = site.tlsInternal === true ? [domain, 'localhost'] : []
+  const name = String(site.name ?? '').toLowerCase().replace(/[^a-z0-9-]+/g, '-')
+  const aliases = [domain, ...(name ? [`${name}.localhost`] : [])]
+  const httpAddresses = aliases.map((host) => `http://${host}`)
+  const httpsAddresses = site.tlsInternal === true ? aliases : []
   const blocks = [
     ...(httpAddresses.length ? [{ addresses: httpAddresses, tls: false }] : []),
     ...(httpsAddresses.length ? [{ addresses: httpsAddresses, tls: true }] : []),
@@ -742,12 +811,17 @@ function scanParked(state: LocalState): ParkedProject[] {
         existsSync(join(path, 'composer.json')) ||
         existsSync(join(path, 'package.json')) ||
         existsSync(join(path, 'public', 'index.php')) ||
+        existsSync(join(path, 'index.php')) ||
+        existsSync(join(path, 'wp-content')) ||
         existsSync(join(path, '.git'))
       if (!isProject) continue
       const name = entry.name.toLowerCase().replace(/[^a-z0-9-]+/g, '-')
-      // Un proyecto Laravel tiene package.json para Vite, pero se sirve con PHP.
+      // Laravel, WordPress y cualquier raíz con index.php se sirven con PHP.
       const isPhp =
-        existsSync(join(path, 'composer.json')) || existsSync(join(path, 'public', 'index.php'))
+        existsSync(join(path, 'composer.json')) ||
+        existsSync(join(path, 'public', 'index.php')) ||
+        existsSync(join(path, 'index.php')) ||
+        existsSync(join(path, 'wp-content'))
       const kind = isPhp ? 'php' : 'node'
       found.push({ name: entry.name, root: path, domain: `${name}.test`, kind })
     }
@@ -820,6 +894,12 @@ async function localInvoke(cmd: string, args: Record<string, unknown>): Promise<
     }
     case 'list_parked':
       return scanParked(state)
+    case 'sync_projects':
+      return syncProjects(state)
+    case 'hosts_status':
+      return hostsStatus(state)
+    case 'hosts_ensure':
+      return ensureHosts(state)
     case 'park_folder': {
       const root = String(args.root)
       if (!parkedRoots(state).includes(root)) state.parkedRoots.push(root)

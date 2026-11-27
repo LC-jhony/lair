@@ -7,8 +7,10 @@ import type { Site } from './types'
  */
 export function generateCaddyfile(site: Site): string {
   const domain = site.domains[0] ?? `${site.name}.test`
-  const httpAddresses = [`http://${domain}`, 'http://localhost']
-  const httpsAddresses = site.tlsInternal ? [domain, 'localhost'] : []
+  const alias = `${site.name.toLowerCase().replace(/[^a-z0-9-]+/g, '-')}.localhost`
+  const hosts = [domain, alias, 'localhost']
+  const httpAddresses = hosts.map((host) => `http://${host}`)
+  const httpsAddresses = site.tlsInternal ? hosts : []
   return [
     ...httpAddresses.map((address) => block(site, address, false)),
     ...httpsAddresses.map((address) => block(site, address, true)),

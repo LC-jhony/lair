@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   Circle,
   Download,
+  Globe2,
   Loader2,
   ShieldCheck,
   TerminalSquare,
@@ -14,6 +15,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 import { useOnboarding } from '@/hooks/useOnboarding'
+import { useHostsEnsure } from '@/hooks/useSites'
 import {
   useCaStatus,
   useEnsurePath,
@@ -26,6 +28,12 @@ type StepState = 'pending' | 'running' | 'done' | 'error'
 
 const ITEMS = [
   { id: 'caddy', label: 'Caddy', detail: 'Reverse proxy local con HTTPS', icon: ShieldCheck },
+  {
+    id: 'hosts',
+    label: 'Dominios .test',
+    detail: 'Resuelve tus proyectos y usa los puertos 80/443',
+    icon: Globe2,
+  },
   { id: 'runtimes', label: 'PHP y Node', detail: 'Versiones gestionadas por proyecto', icon: TerminalSquare },
   { id: 'composer', label: 'Composer', detail: 'Gestor de dependencias de PHP', icon: Download },
   { id: 'path', label: 'PATH del sistema', detail: 'Shims disponibles en nuevas terminales', icon: TerminalSquare },
@@ -39,6 +47,7 @@ export function OnboardingWizard() {
   const installComposer = useInstallComposer()
   const ensurePath = useEnsurePath()
   const trustCa = useTrustCa()
+  const ensureHosts = useHostsEnsure()
   const { data: path } = usePathStatus()
   const { data: ca } = useCaStatus()
 
@@ -46,8 +55,10 @@ export function OnboardingWizard() {
   const [started, setStarted] = useState(false)
   const [finished, setFinished] = useState(false)
   const [addToPath, setAddToPath] = useState(true)
+  const [configureHosts, setConfigureHosts] = useState(true)
   const [states, setStates] = useState<Record<ItemId, StepState>>({
     caddy: 'pending',
+    hosts: 'pending',
     runtimes: 'pending',
     composer: 'pending',
     path: 'pending',
@@ -63,6 +74,7 @@ export function OnboardingWizard() {
       setError(null)
       setStates({
         caddy: 'pending',
+        hosts: 'pending',
         runtimes: 'pending',
         composer: 'pending',
         path: 'pending',
@@ -95,6 +107,7 @@ export function OnboardingWizard() {
     setError(null)
     setStates({
       caddy: 'pending',
+      hosts: 'pending',
       runtimes: 'pending',
       composer: 'pending',
       path: 'pending',
@@ -103,6 +116,10 @@ export function OnboardingWizard() {
 
     const actions: Array<{ id: ItemId; execute: () => Promise<unknown> }> = [
       { id: 'caddy', execute: () => installCaddy.mutateAsync() },
+      {
+        id: 'hosts',
+        execute: () => (configureHosts ? ensureHosts.mutateAsync() : Promise.resolve()),
+      },
       { id: 'runtimes', execute: () => installBinaries.mutateAsync() },
       { id: 'composer', execute: () => installComposer.mutateAsync() },
       { id: 'path', execute: () => (addToPath ? ensurePath.mutateAsync() : Promise.resolve()) },
@@ -178,6 +195,21 @@ export function OnboardingWizard() {
                   Añadir <code>~/.local/share/lair/bin</code> al PATH de mis shells.
                   <span className="block text-xs text-muted-foreground">
                     Reversible y aplicable a terminales nuevas. Ahora: {path?.ok ? 'ya configurado' : 'pendiente'}.
+                  </span>
+                </span>
+              </label>
+              <label className="flex items-start gap-3 rounded-lg bg-muted/40 p-3 text-sm">
+                <input
+                  type="checkbox"
+                  checked={configureHosts}
+                  onChange={(event) => setConfigureHosts(event.target.checked)}
+                  className="mt-0.5 size-4 accent-current"
+                />
+                <span>
+                  Activar dominios <code>.test</code> y puertos 80/443.
+                  <span className="block text-xs text-muted-foreground">
+                    Te pedirá permisos de administrador una vez. Así tus proyectos abrirán en{' '}
+                    <code>http://acme.test</code> sin indicar el puerto.
                   </span>
                 </span>
               </label>

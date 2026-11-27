@@ -1,4 +1,3 @@
-import type { CSSProperties } from 'react'
 import { Bird, LayoutDashboard, RotateCcw } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
 import { useOnboarding } from '@/hooks/useOnboarding'
@@ -35,10 +34,7 @@ export function Sidebar({ compact, showContent, onNavigate }: SidebarProps) {
         compact && showContent && 'hidden',
       )}
     >
-      <div
-        className="mb-4 flex items-center gap-2 px-1 py-1"
-        style={{ WebkitAppRegion: 'drag' } as CSSProperties}
-      >
+      <div className="window-drag mb-4 flex items-center gap-2 px-1 py-1">
         <Bird className="size-5 shrink-0 text-primary" aria-hidden="true" />
         <span className="flex-1 truncate text-xs font-semibold uppercase tracking-wide">
           {tr('app.name')}

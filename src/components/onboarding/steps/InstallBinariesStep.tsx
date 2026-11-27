@@ -22,7 +22,10 @@ export function InstallBinariesStep({ onNext }: StepProps) {
 
       <div className="space-y-2">
         {binaries?.map((binary) => (
-          <div key={binary.package} className="flex items-center justify-between rounded-lg border p-3">
+          <div
+            key={`${binary.package}-${binary.version}`}
+            className="flex items-center justify-between rounded-lg border p-3"
+          >
             <span className="text-sm font-medium">{binary.package}</span>
             <Badge variant={binary.installed ? 'success' : 'outline'}>
               {binary.installed && <CheckCircle2 className="size-3" />}

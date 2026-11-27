@@ -29,7 +29,8 @@ export function AppShell({ children }: AppShellProps) {
   return (
     <StatusBannerProvider>
       <ContentScrollProvider>
-        <div className="flex h-screen overflow-hidden bg-background">
+        {/* Toda la ventana es arrastrable; CSS excluye controles y texto seleccionable. */}
+        <div className="window-drag-all flex h-screen overflow-hidden bg-background">
           <div className="flex min-h-0 w-full flex-1">
             <Sidebar
               compact={compact}
@@ -42,7 +43,7 @@ export function AppShell({ children }: AppShellProps) {
                   <button
                     type="button"
                     onClick={() => setShowContent(false)}
-                    className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="window-no-drag inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <ChevronLeft className="size-4" aria-hidden="true" />
                     {tr('pane.back')}

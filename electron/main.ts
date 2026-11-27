@@ -48,11 +48,20 @@ function createWindow(): BrowserWindow {
   return window
 }
 
-ipcMain.on('flock:titlebar', (_event, colors: TitleBarColors) => {
-  const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+function applyOverlay(window: BrowserWindow, colors: OverlayColors): void {
+  // WCO no está disponible en todas las combinaciones de SO/gestor de ventanas.
+  try {
+    window.setTitleBarOverlay({ ...colors, height: OVERLAY_HEIGHT })
+  } catch {
+    // Sin overlay los botones siguen visibles; la barra arrastrable no depende de él.
+  }
+}
+
+ipcMain.on('flock:titlebar', (event, colors: TitleBarColors) => {
+  const window = BrowserWindow.fromWebContents(event.sender)
   if (!window || typeof colors.color !== 'string' || typeof colors.symbolColor !== 'string') return
   overlayMode = colors.mode
-  window.setTitleBarOverlay({ color: colors.color, symbolColor: colors.symbolColor, height: OVERLAY_HEIGHT })
+  applyOverlay(window, { color: colors.color, symbolColor: colors.symbolColor })
 })
 
 let mainWindow: BrowserWindow | null = null
@@ -66,7 +75,7 @@ if (!app.requestSingleInstanceLock()) {
     nativeTheme.on('updated', () => {
       if (overlayMode !== 'system') return
       if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.setTitleBarOverlay({ ...overlayFromSystem(), height: OVERLAY_HEIGHT })
+        applyOverlay(mainWindow, overlayFromSystem())
       }
     })
     app.on('activate', () => {

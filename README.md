@@ -940,11 +940,20 @@ La app usa **`@headlessui/react` v2** (`Button`, `Input`, `Field`, `Label`, `Des
 `Checkbox`, `Listbox`, `Menu`, `Switch`, `TabGroup`, `Dialog`) y **shadcn/ui** (`Button`, `Badge`,
 `Separator`, `Card`, `Menubar` disponible en `ui/menubar.tsx`) sobre tokens semánticos de Tailwind v4.
 
-La ventana oculta el marco (`titleBarStyle: "hidden"`) pero conserva los **3 botones nativos**
+La ventana oculta el marco (`titleBarStyle: "hidden"`) pero conserva los botones nativos
 en un overlay de 36 px. Sus colores se sincronizan con el tema de la app (claro / oscuro /
 sistema) leyendo `--background` y `--foreground` y enviándolos por IPC (`flock:titlebar`), por lo
-que nunca aparece una franja negra fija en modo claro. El contenido baja 40 px (`pt-10`) para no
-quedar debajo de los botones.
+que nunca aparece una franja negra fija en modo claro.
+
+Al ocultar el marco (`titleBarStyle: "hidden"`), el SO ya no ofrece una barra para agarrar la
+ventana: `AppShell` marca **toda la app** con `app-region: drag` (clase `.window-drag-all` en
+`src/index.css`), así que se puede arrastrar desde cualquier parte vacía —sidebar, cabeceras,
+fondos de tarjetas— sin dibujar una barra propia. Los controles (`button`, `a`, `input`, `select`,
+`textarea`, roles de Headless UI), el texto seleccionable (`p`, `span`, `h1`…, `li`, `code`, `pre`)
+y los diálogos se excluyen con `app-region: no-drag` para que clics, foco y copiar/pegar sigan
+funcionando. En modo compacto el botón «Atrás» también lleva `.window-no-drag`. Si se usa Wayland
+y el gestor no permite mover ventanas sin marco, se puede forzar Xwayland con
+`electron . --ozone-platform=x11`.
 
 El tema tiene tres modos — **Claro**, **Oscuro** y **Sistema** — seleccionables al pie de la
 sidebar (`ThemeSelect`, un `Listbox` de Headless UI):

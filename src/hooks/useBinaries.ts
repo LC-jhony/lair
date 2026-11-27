@@ -25,6 +25,25 @@ export function useVersions(packageName?: string) {
   })
 }
 
+export function useStartCaddy() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: () => flock.caddy.start(),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: caddyQueryKey })
+      void client.invalidateQueries({ queryKey: ['onboarding'] })
+    },
+  })
+}
+
+export function useStopCaddy() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: () => flock.caddy.stop(),
+    onSuccess: () => client.invalidateQueries({ queryKey: caddyQueryKey }),
+  })
+}
+
 export function useCaddyStatus() {
   return useQuery({
     queryKey: caddyQueryKey,

@@ -449,11 +449,104 @@ function caddyBinaryPath(): string {
   return join(app.getPath('home'), '.local', 'share', 'lair', 'bin', 'caddy')
 }
 
+let caddyProc: ReturnType<typeof spawn> | null = null
+
+function caddyConfigPath(): string {
+  return join(app.getPath('home'), '.local', 'share', 'lair', 'config', 'Caddyfile')
+}
+
+function buildCaddyfile(state: LocalState, globals?: string): string {
+  const options = globals ?? String(state.caddy.globalOptions ?? '')
+  return (options.trim() ? `${options.trim()}\n\n` : '') + state.sites.map(caddyfileForSite).join('\n')
+}
+
+function saveCaddyfile(config: string): string {
+  const target = caddyConfigPath()
+  mkdirSync(dirname(target), { recursive: true })
+  if (existsSync(target)) copyFileSync(target, join(dirname(target), `Caddyfile.${Date.now()}`))
+  writeFileSync(target, config)
+  return target
+}
+
+function pidAlive(pid: number): boolean {
+  if (!pid || pid <= 0) return false
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function waitForCaddy(proc: ReturnType<typeof spawn>, ms = 2500): Promise<boolean> {
+  const deadline = Date.now() + ms
+  while (Date.now() < deadline) {
+    if (proc.exitCode !== null) return false
+    if (await portOpen(2019)) return true
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  return proc.exitCode === null
+}
+
+async function startCaddy(state: LocalState): Promise<{ ok: boolean; running: boolean; detail: string; port?: number }> {
+  if (await portOpen(2019)) {
+    state.caddy = { ...state.caddy, installed: true, running: true }
+    writeState(state)
+    return { ok: true, running: true, detail: 'Caddy ya estaba en ejecución' }
+  }
+  const binary = caddyBinaryPath()
+  if (!existsSync(binary)) {
+    const version = await installCaddyBinary('2.9.0')
+    if (!version) return { ok: false, running: false, detail: 'No se pudo instalar Caddy' }
+  }
+  const base = buildCaddyfile(state)
+  const fallback = `{\n  admin localhost:2019\n  http_port 8080\n  https_port 8443\n}\n\n${base}`
+
+  for (const [config, port] of [[base, 80], [fallback, 8080]] as const) {
+    const path = saveCaddyfile(config)
+    const proc = spawn(binary, ['run', '--config', path, '--adapter', 'caddyfile'], {
+      stdio: ['ignore', 'ignore', 'pipe'],
+      detached: process.platform !== 'win32',
+    })
+    proc.stderr?.resume()
+    proc.unref()
+    caddyProc = proc
+    const running = await waitForCaddy(proc)
+    if (running) {
+      state.caddy = { ...state.caddy, installed: true, running: true, pid: proc.pid }
+      writeState(state)
+      return { ok: true, running: true, detail: `Caddy iniciado en el puerto ${port}`, port }
+    }
+    proc.kill('SIGTERM')
+    caddyProc = null
+  }
+  return {
+    ok: false,
+    running: false,
+    detail: 'No se pudo iniciar Caddy. Revisa los permisos de los puertos 80/443.',
+  }
+}
+
+async function stopCaddy(state: LocalState): Promise<{ ok: boolean; running: boolean }> {
+  await caddyApi('/stop', { method: 'POST' })
+  const pid = Number(state.caddy.pid)
+  try {
+    if (caddyProc) caddyProc.kill('SIGTERM')
+    else if (pid > 0) process.kill(pid, 'SIGTERM')
+  } catch {
+    // El proceso ya había terminado.
+  }
+  caddyProc = null
+  state.caddy = { ...state.caddy, running: false, pid: null }
+  writeState(state)
+  return { ok: true, running: false }
+}
+
 function caddyVersion(): string | null {
   for (const candidate of [caddyBinaryPath(), 'caddy']) {
     try {
       const output = execFileSync(candidate, ['version'], { encoding: 'utf8' })
-      return output.split(/\s+/)[1] ?? null
+      return output.trim().split(/\s+/)[0]?.replace(/^v/, '') ?? null
     } catch {
       // Se prueba el siguiente candidato.
     }
@@ -523,8 +616,7 @@ function caddyfileForSite(site: Record<string, unknown>): string {
 async function reloadCaddyConfig(
   state: LocalState,
 ): Promise<{ ok: true; skipped?: boolean; warnings?: unknown[]; configPath?: string }> {
-  const globals = String(state.caddy.globalOptions ?? '')
-  const config = (globals.trim() ? `${globals.trim()}\n\n` : '') + state.sites.map(caddyfileForSite).join('\n')
+  const config = buildCaddyfile(state)
   const adapted = await caddyApi('/adapt', {
     method: 'POST',
     headers: { 'Content-Type': 'text/caddyfile' },
@@ -872,13 +964,20 @@ async function localInvoke(cmd: string, args: Record<string, unknown>): Promise<
       state.onboarding.caTrusted = false
       writeState(state)
       return { ok: true }
+    case 'caddy_start':
+      return startCaddy(state)
+    case 'caddy_stop':
+      return stopCaddy(state)
     case 'caddy_status': {
       const response = await caddyApi('/config/')
       const version = caddyVersion()
       return {
-        configPath: state.caddy.configPath,
+        configPath: caddyConfigPath(),
         installed: version !== null,
-        running: Boolean(response?.ok),
+        running:
+          Boolean(response?.ok) ||
+          Boolean(caddyProc && caddyProc.exitCode === null) ||
+          pidAlive(Number(state.caddy.pid)),
         version,
         caTrusted: state.onboarding.caTrusted === true,
       }

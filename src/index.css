@@ -93,6 +93,14 @@
   }
 }
 
+@layer base {
+  /* Tailwind v4 cambió el cursor por defecto a `default`; shadcn lo restaura. */
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
 @layer utilities {
   /*
    * Regiones arrastrables de la ventana. `app-region` es la propiedad que
@@ -154,6 +162,11 @@
     user-select: text;
   }
 
+  /* Listas desplegables y menús: sus opciones son `div`, no `button`. */
+  .window-drag-all [role='listbox'],
+  .window-drag-all [role='listbox'] *,
+  .window-drag-all [role='menu'],
+  .window-drag-all [role='menu'] *,
   .window-drag-all [role='dialog'] * {
     -webkit-app-region: no-drag;
     app-region: no-drag;

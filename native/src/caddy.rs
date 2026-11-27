@@ -200,7 +200,12 @@ pub async fn status() -> Result<Value, String> {
     .ok()
     .filter(|output| output.status.success())
     .and_then(|output| String::from_utf8(output.stdout).ok())
-    .and_then(|text| text.split_whitespace().nth(1).map(str::to_string));
+    .and_then(|text| {
+      text
+        .split_whitespace()
+        .next()
+        .map(|value| value.trim_start_matches('v').to_string())
+    });
   let installed = version.is_some() || binary_path().map(|path| path.exists()).unwrap_or(false);
   let running = Client::new()
     .get(format!("{ADMIN}/config/"))

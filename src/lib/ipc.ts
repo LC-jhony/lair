@@ -285,6 +285,14 @@ function createBrowserBridge(): FlockBridge {
         case 'caddy_validate':
         case 'caddy_reload':
           return delay({ ok: true }) as Promise<T>
+        case 'caddy_start':
+          state.caddy.running = true
+          write(state)
+          return delay({ ok: true, running: true, detail: 'Caddy iniciado (demo)', port: 80 }) as Promise<T>
+        case 'caddy_stop':
+          state.caddy.running = false
+          write(state)
+          return delay({ ok: true, running: false }) as Promise<T>
         case 'caddy_trust':
           state.onboarding.caTrusted = true
           state.caddy.installed = true
@@ -391,6 +399,8 @@ export const ipc = {
   caddyAdapt: (config: string) => bridge.invoke<unknown>('caddy_adapt', { config }),
   caddyValidate: (config: string) => bridge.invoke<{ ok: true }>('caddy_validate', { config }),
   caddyReload: (config: string) => bridge.invoke<{ ok: true }>('caddy_reload', { config }),
+  caddyStart: () => bridge.invoke<{ ok: boolean; running: boolean; detail: string; port?: number }>('caddy_start'),
+  caddyStop: () => bridge.invoke<{ ok: boolean; running: boolean }>('caddy_stop'),
   caddyTrust: () => bridge.invoke<{ ok: true }>('caddy_trust'),
   caddyUntrust: () => bridge.invoke<{ ok: true }>('caddy_untrust'),
   openSite: (url: string) => bridge.invoke<{ ok: true }>('open_site', { url }),
@@ -453,6 +463,8 @@ export const flock = {
   caddy: {
     status: ipc.caddyStatus,
     caStatus: ipc.caddyCaStatus,
+    start: ipc.caddyStart,
+    stop: ipc.caddyStop,
     globalOptions: ipc.caddyGlobalOptions,
     setGlobalOptions: ipc.setCaddyGlobalOptions,
     install: async () => {

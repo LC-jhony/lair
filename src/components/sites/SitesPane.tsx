@@ -7,8 +7,10 @@ import {
   GitBranch,
   Globe2,
   Lock,
+  Play,
   Plus,
   RefreshCw,
+  Square,
   Terminal,
   Trash2,
   Unplug,
@@ -27,7 +29,8 @@ import {
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import { PaneView, StateDot } from '@/components/layout'
+import { PaneView, StateDot, useStatusBanner } from '@/components/layout'
+import { useStartCaddy, useStopCaddy } from '@/hooks/useBinaries'
 import { Separator } from '@/components/ui/separator'
 import { useCaddyStatus, useVersions } from '@/hooks/useBinaries'
 import {
@@ -229,6 +232,9 @@ export function SitesPane() {
   const { data: versions = [] } = useVersions('php')
   const { data: nodeVersions = [] } = useVersions('node')
   const { data: caddy } = useCaddyStatus()
+  const startCaddy = useStartCaddy()
+  const stopCaddy = useStopCaddy()
+  const banner = useStatusBanner()
   const { data: environment } = useSiteEnvironment(
     sites[0]?.domains[0] ?? `${sites[0]?.name ?? 'acme'}.test`,
   )
@@ -246,6 +252,17 @@ export function SitesPane() {
   const nodeOptions = groupByMinor(nodeVersions)
     .filter((group) => group.package === 'node')
     .map((group) => ({ value: group.latest.version, label: group.minor }))
+
+  const toggleCaddy = async () => {
+    try {
+      const result = caddy?.running
+        ? await stopCaddy.mutateAsync()
+        : await startCaddy.mutateAsync()
+      banner.notify(String((result as { detail?: string }).detail ?? 'Caddy detenido'))
+    } catch (failure) {
+      banner.report((failure as Error).message)
+    }
+  }
 
   const link = (project: ParkedProject) =>
     create.mutate({
@@ -278,6 +295,15 @@ export function SitesPane() {
             Puertos 80/443:{' '}
             {environment?.ports.http || environment?.ports.https ? 'activos' : 'cerrados'}
           </span>
+          <Button
+            size="xs"
+            variant="outline"
+            loading={startCaddy.isPending || stopCaddy.isPending}
+            onClick={() => void toggleCaddy()}
+          >
+            {caddy?.running ? <Square className="size-3" /> : <Play className="size-3" />}
+            {caddy?.running ? 'Detener Caddy' : 'Iniciar Caddy'}
+          </Button>
         </div>
       </div>
 

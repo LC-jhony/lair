@@ -456,8 +456,12 @@ function caddyConfigPath(): string {
 }
 
 function buildCaddyfile(state: LocalState, globals?: string): string {
-  const options = globals ?? String(state.caddy.globalOptions ?? '')
-  return (options.trim() ? `${options.trim()}\n\n` : '') + state.sites.map(caddyfileForSite).join('\n')
+  const configured = globals ?? String(state.caddy.globalOptions ?? '')
+  // Puertos no privilegiados por defecto: 80/443 requieren permisos de root.
+  const options =
+    configured.trim() ||
+    '{\n  admin localhost:2019\n  http_port 8080\n  https_port 8443\n}'
+  return `${options}\n\n${state.sites.map(caddyfileForSite).join('\n')}`
 }
 
 function saveCaddyfile(config: string): string {
@@ -488,6 +492,44 @@ async function waitForCaddy(proc: ReturnType<typeof spawn>, ms = 2500): Promise<
   return proc.exitCode === null
 }
 
+function ensurePhpFpm(state: LocalState): void {
+  if (!state.sites.some((site) => site.kind === 'php')) return
+  const pid = Number(state.caddy.fpmPid)
+  if (pidAlive(pid) && existsSync(phpFpmSocket())) return
+
+  const binary = join(BIN_DIR, 'php-fpm')
+  if (!existsSync(binary)) return
+  const runDir = dirname(phpFpmSocket())
+  mkdirSync(runDir, { recursive: true })
+  rmSync(phpFpmSocket(), { force: true })
+  const configPath = join(runDir, 'php-fpm.conf')
+  const user = process.env.USER ?? 'nobody'
+  writeFileSync(
+    configPath,
+    [
+      '[global]',
+      `error_log = ${join(runDir, 'php-fpm.log')}`,
+      'daemonize = no',
+      '[www]',
+      `user = ${user}`,
+      `listen = ${phpFpmSocket()}`,
+      'listen.mode = 0666',
+      'pm = dynamic',
+      'pm.max_children = 4',
+      'pm.start_servers = 1',
+      'pm.min_spare_servers = 1',
+      'pm.max_spare_servers = 2',
+      '',
+    ].join('\n'),
+  )
+  const proc = spawn(binary, ['--nodaemonize', '--fpm-config', configPath], {
+    stdio: 'ignore',
+    detached: process.platform !== 'win32',
+  })
+  proc.unref()
+  state.caddy.fpmPid = proc.pid
+}
+
 async function startCaddy(state: LocalState): Promise<{ ok: boolean; running: boolean; detail: string; port?: number }> {
   if (await portOpen(2019)) {
     state.caddy = { ...state.caddy, installed: true, running: true }
@@ -499,6 +541,7 @@ async function startCaddy(state: LocalState): Promise<{ ok: boolean; running: bo
     const version = await installCaddyBinary('2.9.0')
     if (!version) return { ok: false, running: false, detail: 'No se pudo instalar Caddy' }
   }
+  ensurePhpFpm(state)
   const base = buildCaddyfile(state)
   const fallback = `{\n  admin localhost:2019\n  http_port 8080\n  https_port 8443\n}\n\n${base}`
 
@@ -596,41 +639,57 @@ async function portOpen(port: number): Promise<boolean> {
   })
 }
 
+function phpFpmSocket(): string {
+  return join(app.getPath('home'), '.local', 'share', 'lair', 'run', 'php-fpm.sock')
+}
+
+function siteDocumentRoot(root: string): string {
+  const publicRoot = join(root, 'public')
+  return existsSync(join(publicRoot, 'index.php')) ? publicRoot : root
+}
+
 function caddyfileForSite(site: Record<string, unknown>): string {
   const domain = String((site.domains as string[] | undefined)?.[0] ?? `${site.name}.test`)
-  const secure = site.tlsInternal === true
-  let config = `${secure ? domain : `http://${domain}`} {\n`
-  if (secure) config += '    tls internal\n'
-  config += `    root * ${String(site.root ?? '')}\n    encode gzip zstd\n`
-  config += '    @dotfiles path /.*\n    respond @dotfiles 404\n'
-  if (site.kind === 'php') {
-    config += `    php_fastcgi unix//run/php/php${String(site.phpVersion ?? '8.3')}-fpm.sock\n    file_server\n`
-  } else if (site.kind === 'node') {
-    config += '    reverse_proxy 127.0.0.1:3000 {\n        header_up X-Forwarded-Proto {scheme}\n    }\n'
-  } else {
-    config += '    try_files {path} {path}/ /index.html\n    file_server\n'
-  }
-  return `${config}}\n`
+  const root = siteDocumentRoot(String(site.root ?? ''))
+  // `localhost` permite abrir el sitio aunque `.test` no resuelva en este equipo.
+  const httpAddresses = [`http://${domain}`, 'http://localhost']
+  const httpsAddresses = site.tlsInternal === true ? [domain, 'localhost'] : []
+  const blocks = [
+    ...(httpAddresses.length ? [{ addresses: httpAddresses, tls: false }] : []),
+    ...(httpsAddresses.length ? [{ addresses: httpsAddresses, tls: true }] : []),
+  ]
+
+  return blocks
+    .map(({ addresses, tls }) => {
+      let config = `${addresses.join(', ')} {\n`
+      if (tls) config += '    tls internal\n'
+      config += `    root * ${root}\n    encode gzip zstd\n`
+      config += '    @dotfiles path /.*\n    respond @dotfiles 404\n'
+      if (site.kind === 'php') {
+        config += `    php_fastcgi unix/${phpFpmSocket()}\n    file_server\n`
+      } else if (site.kind === 'node') {
+        config += '    reverse_proxy 127.0.0.1:3000 {\n        header_up X-Forwarded-Proto {scheme}\n    }\n'
+      } else {
+        config += '    try_files {path} {path}/ /index.html\n    file_server\n'
+      }
+      return `${config}}\n`
+    })
+    .join('\n')
 }
 
 async function reloadCaddyConfig(
   state: LocalState,
 ): Promise<{ ok: true; skipped?: boolean; warnings?: unknown[]; configPath?: string }> {
+  ensurePhpFpm(state)
   const config = buildCaddyfile(state)
+  const savedPath = saveCaddyfile(config)
   const adapted = await caddyApi('/adapt', {
     method: 'POST',
     headers: { 'Content-Type': 'text/caddyfile' },
     body: config,
   })
   if (!adapted?.ok) {
-    const configDir = join(app.getPath('home'), '.local', 'share', 'lair', 'config')
-    mkdirSync(configDir, { recursive: true })
-    const target = join(configDir, 'Caddyfile')
-    if (existsSync(target)) {
-      copyFileSync(target, join(configDir, `Caddyfile.${Date.now()}`))
-    }
-    writeFileSync(target, config)
-    return { ok: true, skipped: true, configPath: target }
+    return { ok: true, skipped: true, configPath: savedPath }
   }
   const response = await caddyApi('/load', {
     method: 'POST',

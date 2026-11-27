@@ -50,6 +50,7 @@ import {
 import { ipc } from '@/lib/ipc'
 import { tr } from '@/lib/i18n'
 import { groupByMinor } from '@/lib/versions'
+import { browserUrl } from '@/lib/site-url'
 import type { ParkedProject, Site } from '@/lib/types'
 import { NewSiteDialog } from './NewSiteDialog'
 
@@ -73,7 +74,7 @@ function SiteSettingsCard({
   const [branch, setBranch] = useState('')
 
   const domain = site.domains[0] ?? `${site.name}.test`
-  const url = `${site.tlsInternal ? 'https' : 'http'}://${domain}`
+  const url = browserUrl(site.tlsInternal === true)
   const phpVersion = site.phpVersion ?? phpOptions[0]?.value ?? '8.5'
   const nodeVersion = site.nodeVersion ?? nodeOptions[0]?.value ?? '24'
 

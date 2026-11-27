@@ -12,10 +12,13 @@ describe('generateCaddyfile', () => {
       phpVersion: '8.4',
       tlsInternal: true,
     })
-    expect(config).toContain('myapp.test {')
+    expect(config).toContain('http://myapp.test {')
+    expect(config).toContain('http://localhost {')
+    expect(config).toContain('\nmyapp.test {')
+    expect(config).toContain('\nlocalhost {')
     expect(config).toContain('tls internal')
-    expect(config).toContain('root * /srv/myapp')
-    expect(config).toContain('php_fastcgi unix//run/php/php8.4-fpm.sock')
+    expect(config).toContain('root * /srv/myapp/public')
+    expect(config).toContain('php_fastcgi unix//home/jhony/.local/share/lair/run/php-fpm.sock')
   })
 
   it('genera reverse proxy para Node', () => {

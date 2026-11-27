@@ -1,19 +1,31 @@
 import type { Site } from './types'
 
-/** Renderer-side mirror of `caddy::generate_caddyfile` for preview/reload. */
+/**
+ * Espejo del generador del proceso principal, para previsualización.
+ * El archivo que se carga en Caddy lo genera el backend con detección real
+ * de `public/index.php` y de la ruta del socket PHP-FPM.
+ */
 export function generateCaddyfile(site: Site): string {
   const domain = site.domains[0] ?? `${site.name}.test`
-  // `http://` evita la redirección automática HTTP→HTTPS en sitios sin certificado.
-  const address = site.tlsInternal ? domain : `http://${domain}`
+  const httpAddresses = [`http://${domain}`, 'http://localhost']
+  const httpsAddresses = site.tlsInternal ? [domain, 'localhost'] : []
+  return [
+    ...httpAddresses.map((address) => block(site, address, false)),
+    ...httpsAddresses.map((address) => block(site, address, true)),
+  ].join('\n')
+}
+
+function block(site: Site, address: string, tls: boolean): string {
+  const root = site.kind === 'php' ? `${site.root.replace(/\/$/, '')}/public` : site.root
   let config = `${address} {\n`
-  if (site.tlsInternal) config += '    tls internal\n'
-  config += `    root * ${site.root}\n`
+  if (tls) config += '    tls internal\n'
+  config += `    root * ${root}\n`
   config += '    encode gzip zstd\n'
   config += '    @dotfiles path /.*\n    respond @dotfiles 404\n'
 
   if (site.kind === 'php') {
-    const version = site.phpVersion ?? '8.3'
-    config += `    php_fastcgi unix//run/php/php${version}-fpm.sock\n    file_server\n`
+    config += '    php_fastcgi unix//home/jhony/.local/share/lair/run/php-fpm.sock\n'
+    config += '    file_server\n'
   } else if (site.kind === 'node') {
     config += '    reverse_proxy 127.0.0.1:3000 {\n'
     config += '        header_up X-Forwarded-Proto {scheme}\n    }\n'

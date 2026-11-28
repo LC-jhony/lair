@@ -119,56 +119,7 @@
     app-region: no-drag;
   }
 
-  /*
-   * Toda la ventana es arrastrable. Los controles, el texto y los diálogos
-   * recupan el puntero para que los clics y la selección sigan funcionando.
-   */
-  .window-drag-all {
-    -webkit-app-region: drag;
-    app-region: drag;
-    -webkit-user-select: none;
-    user-select: none;
-  }
-
-  .window-drag-all a,
-  .window-drag-all button,
-  .window-drag-all input,
-  .window-drag-all textarea,
-  .window-drag-all select,
-  .window-drag-all label,
-  .window-drag-all summary,
-  .window-drag-all [role='button'],
-  .window-drag-all [role='menuitem'],
-  .window-drag-all [role='checkbox'],
-  .window-drag-all [role='switch'],
-  .window-drag-all [role='dialog'],
-  .window-drag-all [contenteditable='true'],
-  .window-drag-all p,
-  .window-drag-all h1,
-  .window-drag-all h2,
-  .window-drag-all h3,
-  .window-drag-all h4,
-  .window-drag-all h5,
-  .window-drag-all h6,
-  .window-drag-all li,
-  .window-drag-all td,
-  .window-drag-all th,
-  .window-drag-all span,
-  .window-drag-all code,
-  .window-drag-all pre {
-    -webkit-app-region: no-drag;
-    app-region: no-drag;
-    -webkit-user-select: text;
-    user-select: text;
-  }
-
-  /* Listas desplegables y menús: sus opciones son `div`, no `button`. */
-  .window-drag-all [role='listbox'],
-  .window-drag-all [role='listbox'] *,
-  .window-drag-all [role='menu'],
-  .window-drag-all [role='menu'] *,
-  .window-drag-all [role='dialog'] * {
-    -webkit-app-region: no-drag;
-    app-region: no-drag;
-  }
+  /* El contenido usa `window-no-drag` para que la rueda y los clics lleguen
+     siempre al DOM. Solo la pequeña cabecera con `.window-drag` mueve la
+     ventana, además del overlay nativo del título. */
 }

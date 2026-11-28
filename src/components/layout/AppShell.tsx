@@ -29,15 +29,17 @@ export function AppShell({ children }: AppShellProps) {
   return (
     <StatusBannerProvider>
       <ContentScrollProvider>
-        {/* Toda la ventana es arrastrable; CSS excluye controles y texto seleccionable. */}
-        <div className="window-drag-all flex h-screen overflow-hidden bg-background">
+        {/* El arrastre lo da el overlay nativo del título; el contenido recibe la rueda. */}
+        <div className="flex h-screen overflow-hidden bg-background">
           <div className="flex min-h-0 w-full flex-1">
             <Sidebar
               compact={compact}
               showContent={showContent}
               onNavigate={() => setShowContent(true)}
             />
-            <main className={cn('min-h-0 min-w-0 flex-1', compact && !showContent && 'hidden')}>
+            <main
+              className={cn('min-h-0 min-w-0 flex-1 overflow-hidden', compact && !showContent && 'hidden')}
+            >
               {compact ? (
                 <div className="flex items-center border-b px-3 py-2">
                   <button

@@ -22,7 +22,11 @@ export function useContentScrollRef(): RefObject<HTMLDivElement | null> {
 export function ContentScroll({ children }: { children: ReactNode }) {
   const ref = useContentScrollRef()
   return (
-    <div ref={ref} className="h-full overflow-y-auto">
+    <div
+      ref={ref}
+      data-scroll-container
+      className="window-no-drag h-full min-h-0 overflow-y-auto overscroll-contain"
+    >
       {children}
     </div>
   )

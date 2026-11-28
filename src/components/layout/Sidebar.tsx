@@ -29,7 +29,7 @@ export function Sidebar({ compact, showContent, onNavigate }: SidebarProps) {
   return (
     <aside
       className={cn(
-        'flex w-56 shrink-0 flex-col border-r bg-card/40 px-3 py-4',
+        'flex w-56 shrink-0 flex-col overflow-y-auto border-r bg-card/40 px-3 py-4',
         compact && 'w-full',
         compact && showContent && 'hidden',
       )}
